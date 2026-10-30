@@ -1,0 +1,7 @@
+# SDD ruling: no system C linker on gateway — build for musl with bundled rust-lld.
+[build]
+target = "x86_64-unknown-linux-musl"
+
+[target.x86_64-unknown-linux-musl]
+linker = "/home/node/.openclaw/workspace/.openclaw/tmp/ld.lld"
+rustflags = ["-C", "target-feature=+crt-static"]
