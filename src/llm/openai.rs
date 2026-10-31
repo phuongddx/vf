@@ -1,4 +1,4 @@
-use super::{ChatRequest, ChatResponse, LlmClient};
+use super::{ChatRequest, ChatResponse, LlmClient, Usage};
 use async_trait::async_trait;
 
 pub struct OpenAiClient {
@@ -11,7 +11,10 @@ pub struct OpenAiClient {
 impl OpenAiClient {
     pub fn new(base_url: String, api_key: String, model: String) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             base_url,
             api_key,
             model,
@@ -42,7 +45,11 @@ impl LlmClient for OpenAiClient {
             .as_str()
             .unwrap_or_default()
             .to_string();
-        Ok(ChatResponse { text })
+        let usage = body["usage"].as_object().map(|u| Usage {
+            input_tokens: u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            output_tokens: u.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+        });
+        Ok(ChatResponse { text, usage })
     }
 }
 
@@ -59,7 +66,8 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/v1/chat/completions"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "choices": [{ "message": { "role": "assistant", "content": "hello back" } }]
+                "choices": [{ "message": { "role": "assistant", "content": "hello back" } }],
+                "usage": { "prompt_tokens": 7, "completion_tokens": 3 }
             })))
             .mount(&server)
             .await;
@@ -73,6 +81,8 @@ mod tests {
             .complete(&ChatRequest { system: Some("be brief".into()), user: "hi".into() })
             .await?;
         assert_eq!(resp.text, "hello back");
+        let u = resp.usage.expect("usage parsed");
+        assert_eq!((u.input_tokens, u.output_tokens), (7, 3));
         Ok(())
     }
 }

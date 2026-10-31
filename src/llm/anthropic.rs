@@ -1,4 +1,4 @@
-use super::{ChatRequest, ChatResponse, LlmClient};
+use super::{ChatRequest, ChatResponse, LlmClient, Usage};
 use async_trait::async_trait;
 
 pub struct AnthropicClient {
@@ -11,7 +11,10 @@ pub struct AnthropicClient {
 impl AnthropicClient {
     pub fn new(base_url: String, api_key: String, model: String) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
             base_url,
             api_key,
             model,
@@ -51,7 +54,11 @@ impl LlmClient for AnthropicClient {
             })
             .unwrap_or_default()
             .to_string();
-        Ok(ChatResponse { text })
+        let usage = val["usage"].as_object().map(|u| Usage {
+            input_tokens: u.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+            output_tokens: u.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+        });
+        Ok(ChatResponse { text, usage })
     }
 }
 
@@ -69,7 +76,8 @@ mod tests {
             .and(path("/v1/messages"))
             .and(header("x-api-key", "test-key"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "content": [{ "type": "text", "text": "bonjour" }]
+                "content": [{ "type": "text", "text": "bonjour" }],
+                "usage": { "input_tokens": 5, "output_tokens": 2 }
             })))
             .mount(&server)
             .await;
@@ -79,6 +87,8 @@ mod tests {
             .complete(&ChatRequest { system: Some("sois bref".into()), user: "salut".into() })
             .await?;
         assert_eq!(resp.text, "bonjour");
+        let u = resp.usage.expect("usage parsed");
+        assert_eq!((u.input_tokens, u.output_tokens), (5, 2));
         Ok(())
     }
 }

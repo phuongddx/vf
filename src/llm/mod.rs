@@ -6,9 +6,16 @@ pub struct ChatRequest {
     pub user: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Usage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ChatResponse {
     pub text: String,
+    pub usage: Option<Usage>,
 }
 
 #[async_trait]
@@ -44,7 +51,7 @@ mod tests {
     #[async_trait]
     impl LlmClient for UpperEcho {
         async fn complete(&self, req: &ChatRequest) -> anyhow::Result<ChatResponse> {
-            Ok(ChatResponse { text: req.user.to_uppercase() })
+            Ok(ChatResponse { text: req.user.to_uppercase(), usage: None })
         }
     }
 
