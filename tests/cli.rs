@@ -530,6 +530,6 @@ fn make_hyperframes_offline_composes_template() {
         .success()
         .stdout(predicates::str::contains("compose offline"));
     let html = fs::read_to_string(dir.join("vf-projects/hf-offline-idea/index.html")).unwrap();
-    assert!(html.contains("data-fps"));
+    assert!(html.contains("data-composition-id"));
     let _ = fs::remove_dir_all(&dir);
 }

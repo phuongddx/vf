@@ -156,6 +156,7 @@ pub async fn run(
                         "npm install && npx remotion render src/index.tsx vf-main draft.mp4"
                     };
                     println!("{}", crate::i18n::render_skipped_manual(lang2, manual2));
+                    eprintln!("render error: {e}");
                 }
                 break;
             }
@@ -532,12 +533,17 @@ pub fn extract_html(text: &str) -> Option<String> {
 
 fn compose_request(idea: &str, seconds: u32, feedback: Option<&str>) -> crate::llm::ChatRequest {
     let system = "You write HyperFrames compositions. Return ONLY one complete HTML document \
-inside a ```html fence. Contract: the root tag is <html data-fps=\"30\">; body is exactly \
-1080x1920 px with overflow hidden (9:16 vertical); every timed element carries data-start \
-(seconds from film start), data-duration (seconds), and data-track-index (0 unless layered); \
-animate with CSS keyframes only (if you use GSAP you MUST include its <script> tag or lint \
-fails); total film length = last data-start + data-duration; no external network assets — \
-only relative assets/ paths. Plain, readable, high-contrast typography.";
+inside a ```html fence, following this canonical contract exactly: \
+(1) load GSAP via <script src=\"https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js\"></script>; \
+(2) a root wrapper div with data-composition-id=\"vf-main\", data-start=\"0\", \
+data-duration=<total seconds>, data-width=\"1080\", data-height=\"1920\"; \
+(3) every timed child carries class=\"clip\", data-start (seconds), data-duration (seconds), \
+and data-track-index (0 unless layered); \
+(4) after the markup register a paused seekable timeline: \
+const tl = gsap.timeline({ paused: true }); window.__timelines[\"vf-main\"] = tl; tl.seek(0); \
+— add your animation tweens to that timeline so every frame is seekable; \
+(5) body is exactly 1080x1920 px with overflow hidden, plain readable high-contrast typography; \
+(6) media files only from relative assets/ paths (library CDN scripts are fine).";
     let mut user = format!(
         "Idea: {idea}\nTotal duration: about {seconds} seconds.\nWrite the composition now."
     );
@@ -738,7 +744,7 @@ mod tests {
         assert!(matches!(out, super::ComposeOutcome::Offline));
         assert!(dir.join("index.html").exists());
         let html = std::fs::read_to_string(dir.join("index.html"))?;
-        assert!(html.contains("data-fps"));
+        assert!(html.contains("data-composition-id"));
         std::fs::remove_dir_all(&dir).ok();
         Ok(())
     }
