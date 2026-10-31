@@ -295,6 +295,139 @@ pub async fn generate_spec_with_llm(
     LlmSpecOutcome::Fallback(feedback.unwrap_or_else(|| "invalid spec after retry".into()))
 }
 
+pub enum CodegenOutcome {
+    Skipped,
+    Done { usage: Option<crate::llm::Usage>, written: usize, fallbacks: Vec<String> },
+}
+
+/// Strip code fences; keep the code only when it has a default export.
+pub fn extract_code(text: &str) -> Option<String> {
+    let t = text.trim();
+    let t = t
+        .strip_prefix("```tsx")
+        .or_else(|| t.strip_prefix("```typescript"))
+        .or_else(|| t.strip_prefix("```"))
+        .unwrap_or(t);
+    let t = t.strip_suffix("```").unwrap_or(t);
+    let t = t.trim();
+    if t.contains("export default") {
+        Some(t.to_string())
+    } else {
+        None
+    }
+}
+
+fn codegen_request(
+    scene: &crate::ir::Scene,
+    style: &crate::ir::Style,
+    feedback: Option<&str>,
+) -> crate::llm::ChatRequest {
+    let system = "You write Remotion scene components. Return ONLY TypeScript TSX code in a \
+```tsx fence. Contract: default export a React functional component accepting props \
+{ scene, palette, font } (types from ../scenes/registry). You may import from \"remotion\" \
+(AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring, Img, staticFile). \
+Animate using useCurrentFrame() relative to the scene; the component fills the whole frame. \
+No external packages, no network, no files outside staticFile(\"assets/...\").";
+    let scene_json = serde_json::to_string(scene).unwrap_or_default();
+    let style_json = serde_json::to_string(style).unwrap_or_default();
+    let mut user = format!("Scene JSON: {scene_json}\nStyle JSON: {style_json}\nWrite the component now.");
+    if let Some(fb) = feedback {
+        user.push_str(&format!("\nYour previous code failed validation: {fb}. Fix it."));
+    }
+    crate::llm::ChatRequest { system: Some(system.into()), user }
+}
+
+/// tsc --noEmit gate: true when pass, disabled via VF_TSC=0, or unavailable
+/// (no node — light check only, done by extract_code). false = compile error.
+async fn tsc_ok(exec: &dyn crate::exec::Executor, project_dir: &std::path::Path) -> bool {
+    if std::env::var("VF_TSC").map(|v| v == "0").unwrap_or(false) {
+        return true;
+    }
+    let cmd = crate::exec::CommandSpec {
+        program: "npx".into(),
+        args: vec!["tsc".into(), "--noEmit".into()],
+        cwd: Some(project_dir.to_path_buf()),
+    };
+    match exec.run(&cmd).await {
+        Ok(out) => out.status == 0,
+        Err(_) => true,
+    }
+}
+
+pub async fn codegen_custom_scenes(
+    cfg: &crate::config::Config,
+    spec: &crate::ir::VideoSpec,
+    project_dir: &std::path::Path,
+    exec: &dyn crate::exec::Executor,
+) -> CodegenOutcome {
+    use crate::llm::LlmClient as _;
+    let custom: Vec<&crate::ir::Scene> = spec.scenes.iter().filter(|s| s.custom).collect();
+    if custom.is_empty() {
+        return CodegenOutcome::Skipped;
+    }
+    let Some(provider_name) = cfg.routing.codegen.clone() else {
+        return CodegenOutcome::Skipped;
+    };
+    let Some(p) = cfg.providers.get(&provider_name) else {
+        return CodegenOutcome::Skipped;
+    };
+    let key_missing = std::env::var(&p.api_key_env).map(|v| v.is_empty()).unwrap_or(true);
+    if key_missing || crate::llm::check_tls(&p.base_url).is_err() {
+        return CodegenOutcome::Skipped;
+    }
+    let Ok(inner) = crate::llm::registry::build(&provider_name, cfg) else {
+        return CodegenOutcome::Skipped;
+    };
+    let client = crate::llm::retry::RetryingClient::new(inner);
+    let mut usage_total: Option<crate::llm::Usage> = None;
+    let mut written = 0usize;
+    let mut fallbacks: Vec<String> = Vec::new();
+    for scene in custom {
+        let path = project_dir
+            .join("src/scenes")
+            .join(format!("Custom_{}.tsx", scene.id));
+        let mut feedback: Option<String> = None;
+        let mut done = false;
+        for _attempt in 0..2 {
+            let req = codegen_request(scene, &spec.style, feedback.as_deref());
+            match client.complete(&req).await {
+                Err(_) => break,
+                Ok(resp) => {
+                    if let Some(u) = resp.usage {
+                        usage_total = Some(match usage_total {
+                            None => u,
+                            Some(prev) => crate::llm::Usage {
+                                input_tokens: prev.input_tokens + u.input_tokens,
+                                output_tokens: prev.output_tokens + u.output_tokens,
+                            },
+                        });
+                    }
+                    if let Some(code) = extract_code(&resp.text) {
+                        if let Some(parent) = path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        let _ = std::fs::write(&path, &code);
+                        if tsc_ok(exec, project_dir).await {
+                            written += 1;
+                            done = true;
+                            break;
+                        }
+                        feedback = Some("TypeScript compile failed".into());
+                    } else {
+                        feedback = Some("no export default found".into());
+                    }
+                }
+            }
+        }
+        if !done {
+            let _ = std::fs::remove_file(&path);
+            fallbacks.push(scene.id.clone());
+        }
+    }
+    let _ = crate::engine::scaffold::rebuild_registry(project_dir);
+    CodegenOutcome::Done { usage: usage_total, written, fallbacks }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -362,5 +495,24 @@ mod tests {
         assert_eq!(std::fs::read(dir.join("final.mp4"))?, b"abc");
         std::fs::remove_dir_all(&dir).ok();
         Ok(())
+    }
+
+    #[test]
+    fn extract_code_strips_fences() {
+        let tsx = "```tsx\nexport default () => <div/>;\n```";
+        assert!(super::extract_code(tsx).unwrap().contains("export default"));
+        assert!(super::extract_code("export default 1;").unwrap().contains("export default"));
+        assert!(super::extract_code("no code here").is_none());
+    }
+
+    #[test]
+    fn codegen_request_contract() {
+        use crate::ir::VideoSpec;
+        let spec = VideoSpec::demo("d");
+        let req = super::codegen_request(&spec.scenes[0], &spec.style, None);
+        assert!(req.system.as_deref().unwrap_or("").contains("default export"));
+        assert!(req.user.contains("s1"));
+        let retry = super::codegen_request(&spec.scenes[0], &spec.style, Some("TS2345"));
+        assert!(retry.user.contains("TS2345"));
     }
 }

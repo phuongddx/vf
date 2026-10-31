@@ -216,6 +216,40 @@ fn dims(spec: &crate::ir::VideoSpec) -> (u32, u32) {
     }
 }
 
+/// Regenerate src/scenes/registry.ts from existing Custom_s*.tsx files.
+/// Returns the number of custom components registered.
+pub fn rebuild_registry(project_dir: &Path) -> anyhow::Result<usize> {
+    let scenes_dir = project_dir.join("src").join("scenes");
+    let mut ids: Vec<String> = Vec::new();
+    if scenes_dir.exists() {
+        for entry in std::fs::read_dir(&scenes_dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(id) = name
+                .strip_prefix("Custom_")
+                .and_then(|s| s.strip_suffix(".tsx"))
+            {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    ids.sort();
+    let mut out = String::from(
+        "import type { FC } from \"react\";\n\nexport interface SceneLike {\n  id: string;\n  duration: number;\n  custom?: boolean;\n  narration?: string | null;\n  elements?: Array<{ type: string; content?: string; src?: string; motion?: string | null }>;\n}\n\nexport interface SceneProps {\n  scene: SceneLike;\n  palette: string[];\n  font: string;\n}\n\n// vf regenerates this file by scanning src/scenes/Custom_*.tsx — do not edit.\n",
+    );
+    for id in &ids {
+        out.push_str(&format!("import Custom_{id} from \"./Custom_{id}\";\n"));
+    }
+    out.push_str("\nexport const customScenes: Record<string, FC<SceneProps>> = {\n");
+    for id in &ids {
+        out.push_str(&format!("  \"{id}\": Custom_{id},\n"));
+    }
+    out.push_str("};\n");
+    std::fs::create_dir_all(&scenes_dir)?;
+    std::fs::write(scenes_dir.join("registry.ts"), out)?;
+    Ok(ids.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +291,24 @@ mod tests {
         let reg = std::fs::read_to_string(dir.join("src/scenes/registry.ts")).unwrap();
         assert!(reg.contains("customScenes"));
         assert!(dir.join("public").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rebuild_registry_scans_custom_files() {
+        let dir = std::env::temp_dir().join(format!("vf-reg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let spec = crate::ir::VideoSpec::demo("d");
+        write_scaffold(&dir, &spec).unwrap();
+        std::fs::write(dir.join("src/scenes/Custom_s1.tsx"), "export default () => null;").unwrap();
+        std::fs::write(dir.join("src/scenes/Custom_s7.tsx"), "export default () => null;").unwrap();
+        let n = rebuild_registry(&dir).unwrap();
+        assert_eq!(n, 2);
+        let reg = std::fs::read_to_string(dir.join("src/scenes/registry.ts")).unwrap();
+        assert!(reg.contains("Custom_s1"));
+        assert!(reg.contains("Custom_s7"));
+        assert!(reg.contains("\"s7\": Custom_s7,"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
