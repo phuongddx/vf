@@ -532,18 +532,17 @@ pub fn extract_html(text: &str) -> Option<String> {
 }
 
 fn compose_request(idea: &str, seconds: u32, feedback: Option<&str>) -> crate::llm::ChatRequest {
-    let system = "You write HyperFrames compositions. Return ONLY one complete HTML document \
-inside a ```html fence, following this canonical contract exactly: \
-(1) load GSAP via <script src=\"https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js\"></script>; \
-(2) a root wrapper div with data-composition-id=\"vf-main\", data-start=\"0\", \
-data-duration=<total seconds>, data-width=\"1080\", data-height=\"1920\"; \
-(3) every timed child carries class=\"clip\", data-start (seconds), data-duration (seconds), \
-and data-track-index (0 unless layered); \
-(4) after the markup register a paused seekable timeline: \
-const tl = gsap.timeline({ paused: true }); window.__timelines[\"vf-main\"] = tl; tl.seek(0); \
-— add your animation tweens to that timeline so every frame is seekable; \
-(5) body is exactly 1080x1920 px with overflow hidden, plain readable high-contrast typography; \
-(6) media files only from relative assets/ paths (library CDN scripts are fine).";
+    let system = "You write HyperFrames compositions — a designed 9:16 vertical video. \
+Return ONLY one complete HTML document inside a ```html fence. START from this exact \
+skeleton and replace the content with a rich, well-designed scene sequence — keep ALL \
+structural attributes (data-*, class=\"clip\", the GSAP script tag, the timeline \
+registration) exactly as shown:\n\
+<!doctype html>\n<html lang=\"vi\"><head><meta charset=\"UTF-8\" />\n<script src=\"https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js\"></script>\n<style>/* body 1080x1920 overflow hidden */</style></head><body>\n<div id=\"root\" data-composition-id=\"vf-main\" data-start=\"0\" data-duration=\"TOTAL\" data-width=\"1080\" data-height=\"1920\">\n<!-- your timed children: class=\"clip\" data-start=\"..\" data-duration=\"..\" data-track-index=\"0\" -->\n</div>\n<script>\nconst tl = gsap.timeline({ paused: true });\n// your tweens here — every frame must be seekable via tl
+window.__timelines[\"vf-main\"] = tl; tl.seek(0);\n</script></body></html>\n\
+RULES:\n(1) Multiple .clip scenes with staggered entrance animations (scale, y, opacity tweens on tl).\n(2) CRITICAL lint rule gsap_css_transform_conflict: NEVER set CSS `transform` on any \
+element you animate with GSAP — GSAP overwrites the whole transform. Center elements \
+with flexbox/margins/position, never `transform: translateX(-50%)` or similar.\n(3) All animation as tweens on the paused timeline tl (seekable); tl.seek(0) last.\n(4) body exactly 1080x1920 px, overflow hidden, high-contrast typography, designed look \
+(dark gradient background, accent color, visual hierarchy).\n(5) Media files only from relative assets/ paths (library CDN scripts are fine).";
     let mut user = format!(
         "Idea: {idea}\nTotal duration: about {seconds} seconds.\nWrite the composition now."
     );
@@ -610,7 +609,7 @@ pub async fn compose_hf_stage(
     let client = crate::llm::retry::RetryingClient::new(inner);
     let mut feedback: Option<String> = None;
     for _attempt in 0..2 {
-        let req = compose_request(idea, 8, feedback.as_deref());
+        let req = compose_request(idea, 10, feedback.as_deref());
         match client.complete(&req).await {
             Err(e) => {
                 let reason = crate::i18n::llm_error(crate::i18n::Lang::En, &e, &p.api_key_env);
