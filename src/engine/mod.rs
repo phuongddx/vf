@@ -24,6 +24,7 @@ pub fn build_engine(name: &str) -> anyhow::Result<Box<dyn Engine>> {
 }
 
 pub mod dryrun;
+pub mod hf_template;
 pub mod remotion;
 pub mod scaffold;
 
