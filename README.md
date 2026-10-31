@@ -104,7 +104,7 @@ Có `node` + `npx` là `vf make` render video thật (mặc định `VF_ENGINE=r
 
 Cả hai đều có: offline template fallback, make-never-dies, usage/cost reporting.
 
-## Trạng thái (v0.3.0)
+## Trạng thái (v0.4.0)
 
 - ✅ Pipeline end-to-end với **dry-run engine** (mặc định): `video.spec.json` + scaffold + `draft.mp4` + `final.mp4`
 - ✅ **LLM spec generation + hybrid codegen**: Z.ai GLM default; scene `custom` → LLM sinh component Remotion thật (validate `tsc`, fail → fallback template)
