@@ -75,7 +75,13 @@ pub async fn run(
             )?;
         }
         if stage == "render" {
-            run_render(&slug, &project_dir, template).await?;
+            if let Err(e) = run_render(&slug, &project_dir, template).await {
+                if !e.to_string().contains("VF_RENDER_SKIPPED") {
+                    let lang2 = crate::i18n::Lang::from_env();
+                    println!("{}", crate::i18n::render_skipped_manual(lang2, "npm install && npx remotion render src/index.tsx vf-main draft.mp4"));
+                }
+                break;
+            }
         }
         if stage == "post" {
             run_post(&project_dir).await?;
@@ -126,6 +132,19 @@ async fn run_render(
     // EVERY engine (stage ghi artifact), not just Remotion.
     std::fs::write(&spec_path, spec.to_json_string()?)?;
     crate::engine::scaffold::write_scaffold(project_dir, &spec)?;
+    if engine_name == "remotion" {
+        let lang = crate::i18n::Lang::from_env();
+        let exec = crate::exec::TokioExecutor::new();
+        let ready = crate::cmd::doctor::tool_available(&exec, "node").await
+            && crate::cmd::doctor::tool_available(&exec, "npx").await;
+        if !ready {
+            println!("{}", crate::i18n::render_skipped_manual(lang, "npm install && npx remotion render src/index.tsx vf-main draft.mp4"));
+            anyhow::bail!("VF_RENDER_SKIPPED");
+        }
+        println!("{}", crate::i18n::npm_install_running(lang));
+        println!("{}", crate::i18n::render_running(lang));
+        println!("{}", crate::i18n::chrome_first_run_note(lang));
+    }
     engine
         .render(&spec, project_dir, &project_dir.join("draft.mp4"))
         .await?;
@@ -153,6 +172,14 @@ pub fn post_command(
 }
 
 async fn run_post(project_dir: &std::path::Path) -> anyhow::Result<()> {
+    let exec = crate::exec::TokioExecutor::new();
+    run_post_with(project_dir, &exec).await
+}
+
+async fn run_post_with(
+    project_dir: &std::path::Path,
+    exec: &dyn Executor,
+) -> anyhow::Result<()> {
     let draft = project_dir.join("draft.mp4");
     let final_path = project_dir.join("final.mp4");
     let dry = std::env::var("VF_ENGINE")
@@ -160,13 +187,17 @@ async fn run_post(project_dir: &std::path::Path) -> anyhow::Result<()> {
         .unwrap_or(false);
     if dry {
         std::fs::copy(&draft, &final_path)?;
-    } else {
-        let exec = crate::exec::TokioExecutor::new();
-        let res = exec
-            .run(&post_command(&draft, &final_path, project_dir))
-            .await?;
-        if res.status != 0 {
-            anyhow::bail!("ffmpeg post failed (exit {}): {}", res.status, res.stderr);
+        return Ok(());
+    }
+    match exec
+        .run(&post_command(&draft, &final_path, project_dir))
+        .await
+    {
+        Ok(res) if res.status == 0 => {}
+        Ok(_) | Err(_) => {
+            // ffmpeg failed or is missing — degrade to a plain copy.
+            println!("{}", crate::i18n::ffmpeg_copy_fallback(crate::i18n::Lang::from_env()));
+            std::fs::copy(&draft, &final_path)?;
         }
     }
     Ok(())
@@ -307,5 +338,29 @@ mod tests {
         assert!(first.system.as_deref().unwrap_or("").contains("meta.duration"));
         let second = super::spec_request("idea", &t, Some("scenes empty"));
         assert!(second.user.contains("scenes empty"));
+    }
+
+    mod temp {
+        pub fn post_dir() -> std::path::PathBuf {
+            let d = std::env::temp_dir().join(format!("vf-post-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&d);
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        }
+    }
+
+    #[tokio::test]
+    async fn post_falls_back_to_copy_without_ffmpeg() -> anyhow::Result<()> {
+        let dir = temp::post_dir();
+        std::fs::write(dir.join("draft.mp4"), b"abc")?;
+        let exec = crate::exec::testing::MockExecutor::with_outputs(vec![crate::exec::RunOutput {
+            status: 127,
+            stdout: String::new(),
+            stderr: "not found".into(),
+        }]);
+        super::run_post_with(&dir, &exec).await?;
+        assert_eq!(std::fs::read(dir.join("final.mp4"))?, b"abc");
+        std::fs::remove_dir_all(&dir).ok();
+        Ok(())
     }
 }

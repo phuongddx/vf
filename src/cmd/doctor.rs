@@ -38,6 +38,15 @@ pub async fn check_url(url: &str) -> String {
     }
 }
 
+pub async fn tool_available(exec: &dyn Executor, tool: &str) -> bool {
+    let spec = CommandSpec {
+        program: tool.to_string(),
+        args: vec!["--version".into()],
+        cwd: None,
+    };
+    matches!(exec.run(&spec).await, Ok(out) if out.status == 0)
+}
+
 pub async fn run() -> anyhow::Result<()> {
     let exec = crate::exec::TokioExecutor::new();
     for tool in TOOLS {
@@ -116,5 +125,15 @@ mod tests {
         let bad = super::check_url("http://127.0.0.1:9/").await;
         assert!(bad.contains("UNREACHABLE"), "line was: {bad}");
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn tool_available_reports_bool() {
+        let mock = MockExecutor::with_outputs(vec![
+            RunOutput { status: 0, stdout: "v".into(), stderr: String::new() },
+            RunOutput { status: 127, stdout: String::new(), stderr: "not found".into() },
+        ]);
+        assert!(super::tool_available(&mock, "node").await);
+        assert!(!super::tool_available(&mock, "ffmpeg").await);
     }
 }
