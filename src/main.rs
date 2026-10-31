@@ -1,6 +1,7 @@
 mod cli;
 mod cmd;
 mod config;
+mod engine;
 mod exec;
 mod ir;
 mod llm;
