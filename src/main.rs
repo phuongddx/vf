@@ -5,6 +5,7 @@ mod engine;
 mod exec;
 mod ir;
 mod llm;
+mod runtime;
 mod skills;
 mod state;
 mod styles;
