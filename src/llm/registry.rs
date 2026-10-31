@@ -15,6 +15,7 @@ pub fn build(name: &str, cfg: &Config) -> anyhow::Result<Box<dyn LlmClient>> {
             p.api_key_env
         )
     })?;
+    crate::llm::check_tls(&p.base_url)?;
     Ok(match p.protocol {
         Protocol::OpenAi => Box::new(OpenAiClient::new(
             p.base_url.clone(),
