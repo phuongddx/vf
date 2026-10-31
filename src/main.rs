@@ -16,6 +16,7 @@ async fn main() {
     let result = match cli.command {
         cli::Command::Config => cmd::config_cmd::run().await,
         cli::Command::Make { idea } => cmd::make::run(&idea).await,
+        cli::Command::Skills { url } => cmd::skills_cmd::run(url).await,
     };
     if let Err(e) = result {
         eprintln!("vf: {e:#}");

@@ -11,6 +11,8 @@ pub struct Cli {
 pub enum Command {
     /// Show configuration
     Config,
-    /// Run the pipeline for an idea (stub in Plan 1)
+    /// Run the video pipeline for an idea
     Make { idea: String },
+    /// Install a skill from a git URL, or list installed skills
+    Skills { url: Option<String> },
 }

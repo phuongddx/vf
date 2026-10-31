@@ -64,3 +64,55 @@ fn make_dry_run_renders_draft() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn skills_install_and_list_from_local_repo() {
+    let tmp = std::env::temp_dir().join(format!("vf-ski-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    // Fixture git repo — local clone source, no network.
+    let fix = tmp.join("fixture-skill");
+    fs::create_dir_all(&fix).unwrap();
+    fs::write(fix.join("SKILL.md"), "# fixture\n").unwrap();
+    let git = |args: &[&str], cwd: &std::path::Path| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap()
+            .status
+            .success()
+    };
+    assert!(git(&["init", "-q", "-b", "main"], &fix));
+    assert!(git(&["config", "user.email", "t@t.local"], &fix));
+    assert!(git(&["config", "user.name", "t"], &fix));
+    assert!(git(&["add", "."], &fix));
+    assert!(git(&["commit", "-q", "-m", "init"], &fix));
+
+    let work = tmp.join("work");
+    fs::create_dir_all(&work).unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .env("VF_SKILLS_DIR", work.join(".vf").join("skills"))
+        .env("VF_LOCK_PATH", work.join("vf.lock"))
+        .current_dir(&work)
+        .arg("skills")
+        .arg(fix.to_string_lossy().as_ref())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("fixture-skill"));
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .env("VF_SKILLS_DIR", work.join(".vf").join("skills"))
+        .env("VF_LOCK_PATH", work.join("vf.lock"))
+        .current_dir(&work)
+        .arg("skills")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("fixture-skill"));
+
+    let _ = fs::remove_dir_all(&tmp);
+}
