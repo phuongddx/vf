@@ -84,6 +84,77 @@ pub fn usage_line(lang: Lang, input: u64, output: u64, cost: Option<f64>) -> Str
     }
 }
 
+pub fn codegen_skip(lang: Lang) -> String {
+    match lang {
+        Lang::En => "codegen offline: no key — custom scenes render from template".into(),
+        Lang::Vi => "codegen offline: chưa có key — scene custom render bằng template".into(),
+    }
+}
+
+pub fn codegen_written(lang: Lang, n: usize) -> String {
+    match lang {
+        Lang::En => format!("codegen: wrote {n} custom scene component(s)"),
+        Lang::Vi => format!("codegen: đã viết {n} component scene custom"),
+    }
+}
+
+pub fn codegen_fallback(lang: Lang, scene_id: &str, reason: &str) -> String {
+    match lang {
+        Lang::En => format!("codegen: scene {scene_id} fell back to template ({reason})"),
+        Lang::Vi => format!("codegen: scene {scene_id} dùng lại template ({reason})"),
+    }
+}
+
+pub fn npm_install_running(lang: Lang) -> String {
+    match lang {
+        Lang::En => "npm install: installing Remotion dependencies…".into(),
+        Lang::Vi => "npm install: đang cài dependencies Remotion…".into(),
+    }
+}
+
+pub fn render_running(lang: Lang) -> String {
+    match lang {
+        Lang::En => "render: running npx remotion render…".into(),
+        Lang::Vi => "render: đang chạy npx remotion render…".into(),
+    }
+}
+
+pub fn render_skipped_manual(lang: Lang, cmd: &str) -> String {
+    match lang {
+        Lang::En => format!("render skipped (toolchain problem) — run manually in the project dir:\n  {cmd}"),
+        Lang::Vi => format!("đã bỏ qua render (lỗi toolchain) — chạy thủ công trong thư mục dự án:\n  {cmd}"),
+    }
+}
+
+pub fn chrome_first_run_note(lang: Lang) -> String {
+    match lang {
+        Lang::En => "note: first render downloads Chrome Headless Shell (~150 MB)".into(),
+        Lang::Vi => "ghi chú: lần render đầu tải Chrome Headless Shell (~150 MB)".into(),
+    }
+}
+
+pub fn ffmpeg_copy_fallback(lang: Lang) -> String {
+    match lang {
+        Lang::En => "ffmpeg missing — final.mp4 is a copy of draft.mp4".into(),
+        Lang::Vi => "thiếu ffmpeg — final.mp4 là bản copy của draft.mp4".into(),
+    }
+}
+
+pub fn codegen_usage_combined(
+    lang: Lang,
+    spec_in: u64,
+    spec_out: u64,
+    code_in: u64,
+    code_out: u64,
+    cost: Option<f64>,
+) -> String {
+    let cost_s = cost.map(|c| format!(" (~${c:.4})")).unwrap_or_default();
+    match lang {
+        Lang::En => format!("usage: spec {spec_in}/{spec_out} · codegen {code_in}/{code_out} tokens{cost_s}"),
+        Lang::Vi => format!("tiêu thụ: spec {spec_in}/{spec_out} · codegen {code_in}/{code_out} token{cost_s}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,5 +204,19 @@ mod tests {
         assert!(usage_line(Lang::En, 10, 20, Some(0.0001)).contains("~$"));
         assert!(usage_line(Lang::Vi, 10, 20, None).contains("tiêu thụ: 10 vào / 20 ra token"));
         assert!(!usage_line(Lang::Vi, 10, 20, None).contains("~$"));
+    }
+
+    #[test]
+    fn b2_strings_bilingual() {
+        assert!(codegen_skip(Lang::Vi).contains("codegen offline"));
+        assert!(codegen_written(Lang::En, 2).contains("2 custom scene"));
+        assert!(codegen_fallback(Lang::Vi, "s1", "tsc").contains("s1"));
+        assert!(npm_install_running(Lang::En).contains("npm install"));
+        assert!(render_running(Lang::Vi).contains("render"));
+        assert!(render_skipped_manual(Lang::En, "npx remotion render").contains("npx remotion render"));
+        assert!(chrome_first_run_note(Lang::Vi).contains("Chrome"));
+        assert!(ffmpeg_copy_fallback(Lang::En).contains("ffmpeg"));
+        assert!(codegen_usage_combined(Lang::Vi, 10, 20, 30, 40, None).contains("spec 10/20 · codegen 30/40"));
+        assert!(codegen_usage_combined(Lang::En, 1, 2, 3, 4, Some(0.5)).contains("~$0.5000"));
     }
 }
