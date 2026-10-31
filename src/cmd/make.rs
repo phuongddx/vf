@@ -560,9 +560,13 @@ pub enum ComposeOutcome {
     Fallback { reason: String },
 }
 
-async fn lint_passes(exec: &dyn crate::exec::Executor, project_dir: &std::path::Path) -> bool {
+/// None = pass; Some(findings) = lint failed with its output (for retry feedback).
+async fn lint_findings(
+    exec: &dyn crate::exec::Executor,
+    project_dir: &std::path::Path,
+) -> Option<String> {
     if std::env::var("VF_LINT").map(|v| v == "0").unwrap_or(false) {
-        return true;
+        return None;
     }
     let cmd = crate::exec::CommandSpec {
         program: "npx".into(),
@@ -570,8 +574,9 @@ async fn lint_passes(exec: &dyn crate::exec::Executor, project_dir: &std::path::
         cwd: Some(project_dir.to_path_buf()),
     };
     match exec.run(&cmd).await {
-        Ok(out) => out.status == 0,
-        Err(_) => true, // no npx — light check only (extract_html gated <html)
+        Ok(out) if out.status == 0 => None,
+        Ok(out) => Some(format!("{}\n{}", out.stdout, out.stderr)),
+        Err(_) => None, // no npx — light check only (extract_html gated <html)
     }
 }
 
@@ -615,10 +620,21 @@ pub async fn compose_hf_stage(
             Ok(resp) => {
                 if let Some(doc) = extract_html(&resp.text) {
                     std::fs::write(project_dir.join("index.html"), &doc).ok();
-                    if lint_passes(exec, project_dir).await {
-                        return ComposeOutcome::Composed { usage: resp.usage };
+                    match lint_findings(exec, project_dir).await {
+                        None => return ComposeOutcome::Composed { usage: resp.usage },
+                        Some(findings) => {
+                            let errors: String = findings
+                                .lines()
+                                .filter(|l| l.contains('✗'))
+                                .collect::<Vec<_>>()
+                                .join("; ");
+                            feedback = Some(if errors.is_empty() {
+                                "hyperframes lint reported errors".to_string()
+                            } else {
+                                format!("hyperframes lint errors: {errors}")
+                            });
+                        }
                     }
-                    feedback = Some("hyperframes lint reported errors".into());
                 } else {
                     feedback = Some("output was not an HTML document".into());
                 }

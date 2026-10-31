@@ -4,3 +4,4 @@ full-llm render 10:47: ZAI_CODING_API_KEY secret set
 hf demo job 11:49 — B3 hyperframes render
 retrigger 11:52: demo.yml secrets-line fixed
 canonical template 12:03: lint 0 errors
+ffmpeg step 12:08: runner image lacks system ffmpeg
