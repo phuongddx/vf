@@ -40,6 +40,7 @@ impl Template {
                 }),
                 elements: vec![],
                 transition: Some("slide".into()),
+                custom: false,
             })
             .collect();
         VideoSpec {
@@ -90,5 +91,13 @@ mod tests {
         assert_eq!(e.scenes.len(), 3);
         assert!(e.scenes.iter().all(|s| s.narration.is_some()));
         assert!(e.validate().is_ok());
+    }
+
+    #[test]
+    fn template_specs_mark_no_custom_scenes() {
+        for t in [Template::Default, Template::Launch, Template::Explainer] {
+            let spec = t.build_spec("t");
+            assert!(spec.scenes.iter().all(|s| !s.custom));
+        }
     }
 }

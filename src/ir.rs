@@ -43,6 +43,8 @@ pub struct Scene {
     pub elements: Vec<Element>,
     #[serde(default)]
     pub transition: Option<String>,
+    #[serde(default)]
+    pub custom: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -105,6 +107,7 @@ impl VideoSpec {
                 narration: Some(title.to_string()),
                 elements: vec![],
                 transition: None,
+                custom: false,
             }],
         }
     }
@@ -153,5 +156,17 @@ mod tests {
         let spec = VideoSpec::demo("hello");
         assert!(spec.validate().is_ok());
         assert_eq!(spec.meta.title, "hello");
+    }
+
+    #[test]
+    fn custom_field_defaults_false_and_round_trips() {
+        // Old spec without the field still parses; defaults to false.
+        let old = VideoSpec::from_json_str(SAMPLE).unwrap();
+        assert!(!old.scenes[0].custom);
+        let mut s = VideoSpec::from_json_str(SAMPLE).unwrap();
+        s.scenes[0].custom = true;
+        let json = s.to_json_string().unwrap();
+        let back = VideoSpec::from_json_str(&json).unwrap();
+        assert!(back.scenes[0].custom);
     }
 }
