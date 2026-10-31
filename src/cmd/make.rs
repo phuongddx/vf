@@ -690,8 +690,10 @@ mod tests {
     }
 
     mod temp {
-        pub fn post_dir() -> std::path::PathBuf {
-            let d = std::env::temp_dir().join(format!("vf-post-{}", std::process::id()));
+        /// Unique dir per call — parallel tests must not share one dir (race:
+        /// a shared dir caused a 0-byte read window on CI runners).
+        pub fn post_dir(name: &str) -> std::path::PathBuf {
+            let d = std::env::temp_dir().join(format!("vf-post-{name}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&d);
             std::fs::create_dir_all(&d).unwrap();
             d
@@ -700,7 +702,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_falls_back_to_copy_without_ffmpeg() -> anyhow::Result<()> {
-        let dir = temp::post_dir();
+        let dir = temp::post_dir("copy");
         std::fs::write(dir.join("draft.mp4"), b"abc")?;
         let exec = crate::exec::testing::MockExecutor::with_outputs(vec![crate::exec::RunOutput {
             status: 127,
@@ -752,7 +754,7 @@ mod tests {
 
     #[tokio::test]
     async fn compose_hf_offline_writes_template() -> anyhow::Result<()> {
-        let dir = temp::post_dir();
+        let dir = temp::post_dir("hf-offline");
         let cfg = crate::config::Config::builtin();
         let exec = crate::exec::TokioExecutor::new();
         let out = super::compose_hf_stage(&cfg, "offline hf", &dir, &exec).await;
@@ -766,7 +768,7 @@ mod tests {
 
     #[tokio::test]
     async fn compose_hf_skips_when_index_exists() {
-        let dir = temp::post_dir();
+        let dir = temp::post_dir("hf-skip");
         std::fs::write(dir.join("index.html"), "<html>existing</html>").unwrap();
         let cfg = crate::config::Config::builtin();
         let exec = crate::exec::TokioExecutor::new();

@@ -7,7 +7,7 @@ fn version_works() {
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicates::str::contains("vf 0.4.0"));
+        .stdout(predicates::str::contains("vf 0.4.1"));
 }
 
 #[test]
