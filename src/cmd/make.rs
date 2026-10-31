@@ -125,7 +125,7 @@ async fn run_render(
     // Pipeline owns the IR artifact: video.spec.json lands in project_dir for
     // EVERY engine (stage ghi artifact), not just Remotion.
     std::fs::write(&spec_path, spec.to_json_string()?)?;
-    crate::engine::scaffold::write_scaffold(project_dir)?;
+    crate::engine::scaffold::write_scaffold(project_dir, &spec)?;
     engine
         .render(&spec, project_dir, &project_dir.join("draft.mp4"))
         .await?;
