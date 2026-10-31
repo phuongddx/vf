@@ -91,7 +91,7 @@ Có `node` + `npx` là `vf make` render video thật (mặc định `VF_ENGINE=r
 - Thiếu toolchain? vf in đúng lệnh manual, giữ nguyên artifacts, exit 0
 - `VF_TSC=0` tắt validate TypeScript của scene LLM (mặc định chạy `npx tsc --noEmit`)
 
-## Trạng thái (v0.2.0)
+## Trạng thái (v0.3.0)
 
 - ✅ Pipeline end-to-end với **dry-run engine** (mặc định): `video.spec.json` + scaffold + `draft.mp4` + `final.mp4`
 - ✅ **LLM spec generation + hybrid codegen**: Z.ai GLM default; scene `custom` → LLM sinh component Remotion thật (validate `tsc`, fail → fallback template)
