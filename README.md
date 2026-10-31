@@ -71,7 +71,7 @@ Có key (`export ZAI_CODING_API_KEY=***`): spec được sinh bằng GLM, kèm t
 
 > Ghi chú GLM Coding Plan: gói subscription của Z.ai giới hạn cho công cụ được hỗ trợ chính thức; vf dùng endpoint dạng "other tools" (best-effort) — bạn tự chịu trách nhiệm với điều khoản gói của mình. Xem [docs.z.ai/devpack/tool/others](https://docs.z.ai/devpack/tool/others).
 
-## Trạng thái (v0.1.x)
+## Trạng thái (v0.2.0)
 
 - ✅ Pipeline end-to-end với **dry-run engine** (mặc định): `video.spec.json` + scaffold + `draft.mp4` + `final.mp4`
 - ✅ **LLM spec generation thật**: Z.ai GLM default (Anthropic/OpenAI protocol), timeout/retry, graceful offline/fallback; codegen thật = phase sau
