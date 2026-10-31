@@ -1,5 +1,5 @@
 use super::Engine;
-use crate::exec::{CommandSpec, Executor, RunOutput};
+use crate::exec::{CommandSpec, Executor};
 use crate::ir::VideoSpec;
 use async_trait::async_trait;
 use std::path::{Path, PathBuf};
