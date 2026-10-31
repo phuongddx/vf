@@ -498,6 +498,82 @@ only relative assets/ paths. Plain, readable, high-contrast typography.";
     crate::llm::ChatRequest { system: Some(system.into()), user }
 }
 
+pub enum ComposeOutcome {
+    Skipped,
+    Offline,
+    Composed { usage: Option<crate::llm::Usage> },
+    Fallback { reason: String },
+}
+
+async fn lint_passes(exec: &dyn crate::exec::Executor, project_dir: &std::path::Path) -> bool {
+    if std::env::var("VF_LINT").map(|v| v == "0").unwrap_or(false) {
+        return true;
+    }
+    let cmd = crate::exec::CommandSpec {
+        program: "npx".into(),
+        args: vec!["hyperframes".into(), "lint".into()],
+        cwd: Some(project_dir.to_path_buf()),
+    };
+    match exec.run(&cmd).await {
+        Ok(out) => out.status == 0,
+        Err(_) => true, // no npx — light check only (extract_html gated <html)
+    }
+}
+
+pub async fn compose_hf_stage(
+    cfg: &crate::config::Config,
+    idea: &str,
+    project_dir: &std::path::Path,
+    exec: &dyn crate::exec::Executor,
+) -> ComposeOutcome {
+    use crate::llm::LlmClient as _;
+    if project_dir.join("index.html").exists() {
+        return ComposeOutcome::Skipped;
+    }
+    let Some(provider_name) = cfg.routing.spec.clone() else {
+        crate::engine::hf_template::write_hf_template(project_dir).ok();
+        return ComposeOutcome::Offline;
+    };
+    let Some(p) = cfg.providers.get(&provider_name) else {
+        crate::engine::hf_template::write_hf_template(project_dir).ok();
+        return ComposeOutcome::Offline;
+    };
+    let key_missing = std::env::var(&p.api_key_env).map(|v| v.is_empty()).unwrap_or(true);
+    if key_missing || crate::llm::check_tls(&p.base_url).is_err() {
+        crate::engine::hf_template::write_hf_template(project_dir).ok();
+        return ComposeOutcome::Offline;
+    }
+    let Ok(inner) = crate::llm::registry::build(&provider_name, cfg) else {
+        crate::engine::hf_template::write_hf_template(project_dir).ok();
+        return ComposeOutcome::Offline;
+    };
+    let client = crate::llm::retry::RetryingClient::new(inner);
+    let mut feedback: Option<String> = None;
+    for _attempt in 0..2 {
+        let req = compose_request(idea, 8, feedback.as_deref());
+        match client.complete(&req).await {
+            Err(e) => {
+                let reason = crate::i18n::llm_error(crate::i18n::Lang::En, &e, &p.api_key_env);
+                crate::engine::hf_template::write_hf_template(project_dir).ok();
+                return ComposeOutcome::Fallback { reason };
+            }
+            Ok(resp) => {
+                if let Some(doc) = extract_html(&resp.text) {
+                    std::fs::write(project_dir.join("index.html"), &doc).ok();
+                    if lint_passes(exec, project_dir).await {
+                        return ComposeOutcome::Composed { usage: resp.usage };
+                    }
+                    feedback = Some("hyperframes lint reported errors".into());
+                } else {
+                    feedback = Some("output was not an HTML document".into());
+                }
+            }
+        }
+    }
+    crate::engine::hf_template::write_hf_template(project_dir).ok();
+    ComposeOutcome::Fallback { reason: feedback.unwrap_or_else(|| "invalid composition".into()) }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -602,5 +678,34 @@ mod tests {
         assert!(req.user.contains("8"));
         let retry = super::compose_request("demo idea", 8, Some("missing data-duration"));
         assert!(retry.user.contains("missing data-duration"));
+    }
+
+    #[tokio::test]
+    async fn compose_hf_offline_writes_template() -> anyhow::Result<()> {
+        let dir = temp::post_dir();
+        let cfg = crate::config::Config::builtin();
+        let exec = crate::exec::TokioExecutor::new();
+        let out = super::compose_hf_stage(&cfg, "offline hf", &dir, &exec).await;
+        assert!(matches!(out, super::ComposeOutcome::Offline));
+        assert!(dir.join("index.html").exists());
+        let html = std::fs::read_to_string(dir.join("index.html"))?;
+        assert!(html.contains("data-fps"));
+        std::fs::remove_dir_all(&dir).ok();
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn compose_hf_skips_when_index_exists() {
+        let dir = temp::post_dir();
+        std::fs::write(dir.join("index.html"), "<html>existing</html>").unwrap();
+        let cfg = crate::config::Config::builtin();
+        let exec = crate::exec::TokioExecutor::new();
+        let out = super::compose_hf_stage(&cfg, "x", &dir, &exec).await;
+        assert!(matches!(out, super::ComposeOutcome::Skipped));
+        assert_eq!(
+            std::fs::read_to_string(dir.join("index.html")).unwrap(),
+            "<html>existing</html>"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
