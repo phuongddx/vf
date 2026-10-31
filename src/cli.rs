@@ -20,4 +20,6 @@ pub enum Command {
     },
     /// Install a skill from a git URL, or list installed skills
     Skills { url: Option<String> },
+    /// Check toolchain health (git, node, npx, ffmpeg)
+    Doctor,
 }

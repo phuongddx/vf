@@ -169,3 +169,14 @@ fn make_with_launch_template_shape() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn doctor_reports_tools() {
+    Command::cargo_bin("vf")
+        .unwrap()
+        .arg("doctor")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("doctor: git OK"))
+        .stdout(predicates::str::contains("doctor: ffmpeg MISSING"));
+}

@@ -21,6 +21,7 @@ async fn main() {
             cmd::make::run(&idea, template.as_deref()).await
         }
         cli::Command::Skills { url } => cmd::skills_cmd::run(url).await,
+        cli::Command::Doctor => cmd::doctor::run().await,
     };
     if let Err(e) = result {
         eprintln!("vf: {e:#}");
