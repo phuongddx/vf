@@ -347,7 +347,7 @@ async fn make_uses_llm_when_key_present() -> anyhow::Result<()> {
         .env("VF_LANG", "vi")
         .assert()
         .success()
-        .stdout(predicates::str::contains("tiêu thụ: 10 vào / 20 ra token"));
+        .stdout(predicates::str::contains("spec 10/20 · codegen 0/0"));
 
     let spec = fs::read_to_string(dir.join("vf-projects/llm-driven-idea/video.spec.json"))?;
     assert!(spec.contains("LLM Demo"));
@@ -419,5 +419,93 @@ fn make_offline_mode_warns_without_key() {
         .success()
         .stdout(predicates::str::contains("chế độ offline"));
 
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn make_codegen_writes_custom_scene() -> anyhow::Result<()> {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let spec_json = serde_json::json!({
+        "meta": { "title": "CG", "duration": 4, "fps": 30, "ratio": "9:16", "lang": "vi" },
+        "style": { "preset": "mg-07", "palette": ["#0F172A"], "font": "Inter" },
+        "scenes": [ { "id": "s1", "duration": 4, "custom": true } ]
+    })
+    .to_string();
+    let tsx = "```tsx\nexport default () => null;\n```";
+
+    let server = MockServer::start().await;
+    let spec_resp = serde_json::json!({
+        "content": [{ "type": "text", "text": format!("```json\n{spec_json}\n```") }],
+        "usage": { "input_tokens": 10, "output_tokens": 20 }
+    });
+    let code_resp = serde_json::json!({
+        "content": [{ "type": "text", "text": tsx.to_string() }],
+        "usage": { "input_tokens": 5, "output_tokens": 7 }
+    });
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(spec_resp))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(code_resp))
+        .mount(&server)
+        .await;
+
+    let dir = temp_dir_for("make-cg");
+    let cfg_path = dir.join("config.toml");
+    fs::write(
+        &cfg_path,
+        format!(
+            "[providers.glm-coding]\nprotocol = \"anthropic\"\nbase_url = \"{}\"\napi_key_env = \"VF_TEST_LLM_KEY\"\nmodel = \"glm-5.2\"\n\n[routing]\nspec = \"glm-coding\"\ncodegen = \"glm-coding\"\n",
+            server.uri()
+        ),
+    )
+    .unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .arg("make")
+        .arg("codegen demo")
+        .current_dir(&dir)
+        .env("VF_CONFIG", &cfg_path)
+        .env("VF_TEST_LLM_KEY", "dummy")
+        .env("VF_ENGINE", "dry-run")
+        .env("VF_LANG", "vi")
+        .env("VF_TSC", "0")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("đã viết 1 component scene custom"))
+        .stdout(predicates::str::contains("spec 10/20 · codegen 5/7"));
+
+    let reg = fs::read_to_string(dir.join("vf-projects/codegen-demo/src/scenes/registry.ts"))?;
+    assert!(reg.contains("Custom_s1"));
+    let custom = fs::read_to_string(dir.join("vf-projects/codegen-demo/src/scenes/Custom_s1.tsx"))?;
+    assert!(custom.contains("export default"));
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[test]
+fn make_offline_codegen_skips_silently() {
+    let dir = temp_dir_for("make-cgoff");
+    let cfg_path = dir.join("config.toml");
+    fs::write(&cfg_path, "# defaults only\n").unwrap();
+    Command::cargo_bin("vf")
+        .unwrap()
+        .arg("make")
+        .arg("offline cg")
+        .current_dir(&dir)
+        .env("VF_CONFIG", &cfg_path)
+        .env("VF_ENGINE", "dry-run")
+        .env("VF_LANG", "vi")
+        .env("ZAI_CODING_API_KEY", "")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("chế độ offline"));
     let _ = fs::remove_dir_all(&dir);
 }

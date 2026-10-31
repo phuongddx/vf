@@ -44,23 +44,68 @@ pub async fn run(
 
     let cfg = crate::config::Config::load()?.effective();
     let spec_path = project_dir.join("video.spec.json");
+    let mut spec_usage: Option<crate::llm::Usage> = None;
     if !spec_path.exists() {
         match generate_spec_with_llm(&cfg, idea, &t).await {
-            LlmSpecOutcome::Generated { spec, usage, model } => {
+            LlmSpecOutcome::Generated { spec, usage, .. } => {
                 std::fs::write(&spec_path, spec.to_json_string()?)?;
-                let cost = crate::llm::pricing::estimate_cost(&model, &usage);
-                println!(
-                    "{}",
-                    crate::i18n::usage_line(lang, usage.input_tokens, usage.output_tokens, cost)
-                );
+                spec_usage = Some(usage);
             }
             LlmSpecOutcome::Offline(_) => {
                 println!("{}", crate::i18n::offline_mode(lang));
+                std::fs::write(&spec_path, t.build_spec(&slug).to_json_string()?)?;
             }
             LlmSpecOutcome::Fallback(reason) => {
                 println!("{}", crate::i18n::llm_fallback(lang, &reason));
+                std::fs::write(&spec_path, t.build_spec(&slug).to_json_string()?)?;
             }
         }
+    }
+
+    // Codegen stage: LLM writes Custom_*.tsx for custom scenes (best effort).
+    let spec_disk = crate::ir::VideoSpec::from_json_str(&std::fs::read_to_string(&spec_path)?)?;
+    let mut codegen_usage: Option<crate::llm::Usage> = None;
+    let has_custom = spec_disk.scenes.iter().any(|s| s.custom);
+    if has_custom {
+        let exec = crate::exec::TokioExecutor::new();
+        match codegen_custom_scenes(&cfg, &spec_disk, &project_dir, &exec).await {
+            CodegenOutcome::Skipped => println!("{}", crate::i18n::codegen_skip(lang)),
+            CodegenOutcome::Done { usage, written, fallbacks } => {
+                codegen_usage = usage;
+                println!("{}", crate::i18n::codegen_written(lang, written));
+                for id in fallbacks {
+                    println!("{}", crate::i18n::codegen_fallback(lang, &id, "validation"));
+                }
+            }
+        }
+    }
+
+    if spec_usage.is_some() || codegen_usage.is_some() {
+        let su = spec_usage.unwrap_or(crate::llm::Usage { input_tokens: 0, output_tokens: 0 });
+        let cu = codegen_usage.unwrap_or(crate::llm::Usage { input_tokens: 0, output_tokens: 0 });
+        let model = cfg
+            .providers
+            .get(cfg.routing.spec.as_deref().unwrap_or("glm-coding"))
+            .map(|p| p.model.clone())
+            .unwrap_or_default();
+        let cost = crate::llm::pricing::estimate_cost(
+            &model,
+            &crate::llm::Usage {
+                input_tokens: su.input_tokens + cu.input_tokens,
+                output_tokens: su.output_tokens + cu.output_tokens,
+            },
+        );
+        println!(
+            "{}",
+            crate::i18n::codegen_usage_combined(
+                lang,
+                su.input_tokens,
+                su.output_tokens,
+                cu.input_tokens,
+                cu.output_tokens,
+                cost
+            )
+        );
     }
 
     while let Some(stage) = state.next_stage() {
@@ -75,7 +120,7 @@ pub async fn run(
             )?;
         }
         if stage == "render" {
-            if let Err(e) = run_render(&slug, &project_dir, template).await {
+            if let Err(e) = run_render(&project_dir).await {
                 if !e.to_string().contains("VF_RENDER_SKIPPED") {
                     let lang2 = crate::i18n::Lang::from_env();
                     println!("{}", crate::i18n::render_skipped_manual(lang2, "npm install && npx remotion render src/index.tsx vf-main draft.mp4"));
@@ -114,24 +159,14 @@ pub fn estimate_calls(t: &crate::templates::Template) -> u64 {
     }
 }
 
-async fn run_render(
-    slug: &str,
-    project_dir: &std::path::Path,
-    template: Option<&str>,
-) -> anyhow::Result<()> {
+async fn run_render(project_dir: &std::path::Path) -> anyhow::Result<()> {
     let engine_name = std::env::var("VF_ENGINE").unwrap_or_else(|_| "remotion".into());
     let engine = crate::engine::build_engine(&engine_name)?;
     let spec_path = project_dir.join("video.spec.json");
-    let spec = if spec_path.exists() {
-        crate::ir::VideoSpec::from_json_str(&std::fs::read_to_string(&spec_path)?)?
-    } else {
-        let t = crate::templates::Template::from_str(template.unwrap_or("default"))?;
-        t.build_spec(slug)
-    };
-    // Pipeline owns the IR artifact: video.spec.json lands in project_dir for
-    // EVERY engine (stage ghi artifact), not just Remotion.
-    std::fs::write(&spec_path, spec.to_json_string()?)?;
+    let spec = crate::ir::VideoSpec::from_json_str(&std::fs::read_to_string(&spec_path)?)?;
     crate::engine::scaffold::write_scaffold(project_dir, &spec)?;
+    // Scaffold rewrite resets registry.ts — re-register existing custom scenes.
+    crate::engine::scaffold::rebuild_registry(project_dir)?;
     if engine_name == "remotion" {
         let lang = crate::i18n::Lang::from_env();
         let exec = crate::exec::TokioExecutor::new();
