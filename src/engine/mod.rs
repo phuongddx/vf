@@ -18,13 +18,17 @@ pub fn build_engine(name: &str) -> anyhow::Result<Box<dyn Engine>> {
         "remotion" => Ok(Box::new(crate::engine::remotion::RemotionEngine::new(Box::new(
             crate::exec::TokioExecutor::new(),
         )))),
+        "hyperframes" => Ok(Box::new(crate::engine::hyperframes::HyperframesEngine::new(
+            Box::new(crate::exec::TokioExecutor::new()),
+        ))),
         "dry-run" => Ok(Box::new(crate::engine::dryrun::DryRunEngine)),
-        other => anyhow::bail!("unknown engine '{other}' — expected 'remotion' or 'dry-run'"),
+        other => anyhow::bail!("unknown engine '{other}' — expected 'remotion', 'hyperframes' or 'dry-run'"),
     }
 }
 
 pub mod dryrun;
 pub mod hf_template;
+pub mod hyperframes;
 pub mod remotion;
 pub mod scaffold;
 
