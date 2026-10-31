@@ -2,3 +2,4 @@ Bump this file to re-render the demo video (docs/demo.mp4) on CI.
 re-render 10:06: output-path fix
 full-llm render 10:47: ZAI_CODING_API_KEY secret set
 hf demo job 11:49 — B3 hyperframes render
+retrigger 11:52: demo.yml secrets-line fixed

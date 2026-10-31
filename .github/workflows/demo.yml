@@ -63,7 +63,7 @@ jobs:
         env:
           VF_ENGINE: hyperframes
           VF_LANG: vi
-          ZAI_CODING_API_KEY: *** secrets.ZAI_CODING_API_KEY }}
+          ZAI_CODING_API_KEY: ${{ secrets.ZAI_CODING_API_KEY }}
         run: |
           mkdir -p "$HOME/hf-run"
           cd "$HOME/hf-run"
