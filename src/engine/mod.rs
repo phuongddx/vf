@@ -13,6 +13,8 @@ pub trait Engine: Send + Sync {
     ) -> anyhow::Result<PathBuf>;
 }
 
+pub mod remotion;
+
 #[cfg(test)]
 mod tests {
     use super::*;
