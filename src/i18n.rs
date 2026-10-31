@@ -28,6 +28,13 @@ pub fn project_line(lang: Lang, dir: &std::path::Path) -> String {
     }
 }
 
+pub fn config_hint(lang: Lang, key_env: &str) -> String {
+    match lang {
+        Lang::En => format!("hint: export {key_env}=... to enable LLM spec generation"),
+        Lang::Vi => format!("gợi ý: export {key_env}=... để bật sinh spec bằng LLM"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,5 +51,12 @@ mod tests {
     fn from_env_defaults_to_english() {
         // VF_LANG is not set in this test process
         assert_eq!(Lang::from_env(), Lang::En);
+    }
+
+    #[test]
+    fn config_hint_bilingual() {
+        assert!(config_hint(Lang::En, "ZAI_CODING_API_KEY").contains("export ZAI_CODING_API_KEY"));
+        assert!(config_hint(Lang::Vi, "ZAI_CODING_API_KEY").contains("export ZAI_CODING_API_KEY"));
+        assert!(config_hint(Lang::Vi, "X").contains("gợi ý"));
     }
 }

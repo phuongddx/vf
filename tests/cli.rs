@@ -270,3 +270,27 @@ fn status_shows_stages_after_make() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn config_shows_builtin_profiles_and_hints() {
+    let dir = std::env::temp_dir().join(format!("vf-cfg-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let cfg_path = dir.join("config.toml");
+    fs::write(&cfg_path, "# empty file = built-ins only\n").unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .arg("config")
+        .env("VF_CONFIG", &cfg_path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("glm-coding"))
+        .stdout(predicates::str::contains("https://api.z.ai/api/anthropic"))
+        .stdout(predicates::str::contains("ZAI_CODING_API_KEY"))
+        .stdout(predicates::str::contains("glm"))
+        .stdout(predicates::str::contains("https://api.z.ai/api/paas/v4"))
+        .stdout(predicates::str::contains("export ZAI_CODING_API_KEY"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
