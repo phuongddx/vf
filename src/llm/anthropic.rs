@@ -41,9 +41,16 @@ impl LlmClient for AnthropicClient {
             .header("anthropic-version", "2023-06-01")
             .json(&body)
             .send()
-            .await?
-            .error_for_status()?;
-        let val: serde_json::Value = resp.json().await?;
+            .await
+            .map_err(|e| anyhow::Error::new(crate::llm::LlmError::Network).context(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(anyhow::Error::new(crate::llm::LlmError::Http(status.as_u16())));
+        }
+        let val: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| anyhow::Error::new(crate::llm::LlmError::Network).context(e.to_string()))?;
         let text = val["content"]
             .as_array()
             .and_then(|parts| {

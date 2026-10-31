@@ -23,9 +23,27 @@ pub trait LlmClient: Send + Sync {
     async fn complete(&self, req: &ChatRequest) -> anyhow::Result<ChatResponse>;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmError {
+    Http(u16),
+    Network,
+}
+
+impl std::fmt::Display for LlmError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LlmError::Http(code) => write!(f, "provider returned HTTP {code}"),
+            LlmError::Network => write!(f, "network error"),
+        }
+    }
+}
+
+impl std::error::Error for LlmError {}
+
 pub mod anthropic;
 pub mod openai;
 pub mod registry;
+pub mod retry;
 
 /// Whether this binary supports HTTPS (cargo feature `tls`).
 pub const TLS_ENABLED: bool = cfg!(feature = "tls");

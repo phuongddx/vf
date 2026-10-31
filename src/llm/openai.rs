@@ -38,9 +38,16 @@ impl LlmClient for OpenAiClient {
             .bearer_auth(&self.api_key)
             .json(&serde_json::json!({ "model": self.model, "messages": messages }))
             .send()
-            .await?
-            .error_for_status()?;
-        let body: serde_json::Value = resp.json().await?;
+            .await
+            .map_err(|e| anyhow::Error::new(crate::llm::LlmError::Network).context(e.to_string()))?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(anyhow::Error::new(crate::llm::LlmError::Http(status.as_u16())));
+        }
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| anyhow::Error::new(crate::llm::LlmError::Network).context(e.to_string()))?;
         let text = body["choices"][0]["message"]["content"]
             .as_str()
             .unwrap_or_default()
@@ -84,5 +91,25 @@ mod tests {
         let u = resp.usage.expect("usage parsed");
         assert_eq!((u.input_tokens, u.output_tokens), (7, 3));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn http_500_maps_to_llm_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let client = OpenAiClient::new(format!("{}/v1", server.uri()), "k".into(), "m".into());
+        let err = client
+            .complete(&ChatRequest { system: None, user: "x".into() })
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(
+            err.downcast_ref::<crate::llm::LlmError>(),
+            Some(&crate::llm::LlmError::Http(500)),
+        );
     }
 }
