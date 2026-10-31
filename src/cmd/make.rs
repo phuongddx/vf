@@ -129,7 +129,10 @@ pub async fn run(
             }
         }
         if stage == "post" {
-            run_post(&project_dir).await?;
+            if run_post(&project_dir).await.is_err() {
+                println!("{}", crate::i18n::post_skipped(lang));
+                break;
+            }
         }
         println!("{}", crate::i18n::stage_ok(lang, stage));
         state.mark_done(stage, None);

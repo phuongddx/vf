@@ -140,6 +140,13 @@ pub fn ffmpeg_copy_fallback(lang: Lang) -> String {
     }
 }
 
+pub fn post_skipped(lang: Lang) -> String {
+    match lang {
+        Lang::En => "post skipped — check draft.mp4 and finalize manually if needed".into(),
+        Lang::Vi => "đã bỏ qua post — kiểm tra draft.mp4 và tự hoàn thiện nếu cần".into(),
+    }
+}
+
 pub fn codegen_usage_combined(
     lang: Lang,
     spec_in: u64,
@@ -218,5 +225,6 @@ mod tests {
         assert!(ffmpeg_copy_fallback(Lang::En).contains("ffmpeg"));
         assert!(codegen_usage_combined(Lang::Vi, 10, 20, 30, 40, None).contains("spec 10/20 · codegen 30/40"));
         assert!(codegen_usage_combined(Lang::En, 1, 2, 3, 4, Some(0.5)).contains("~$0.5000"));
+        assert!(post_skipped(Lang::Vi).contains("bỏ qua post"));
     }
 }

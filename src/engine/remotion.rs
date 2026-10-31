@@ -56,6 +56,13 @@ impl Engine for RemotionEngine {
         project_dir: &Path,
         out: &Path,
     ) -> anyhow::Result<PathBuf> {
+        // The render command runs with cwd = project_dir; absolutize the output
+        // so a caller-relative path doesn't nest inside the project dir.
+        let out_abs = if out.is_absolute() {
+            out.to_path_buf()
+        } else {
+            std::env::current_dir()?.join(out)
+        };
         std::fs::write(project_dir.join("video.spec.json"), spec.to_json_string()?)?;
         let pkg = std::fs::read_to_string(project_dir.join("package.json")).unwrap_or_default();
         let hash_file = project_dir.join(".vf-install-hash");
@@ -70,7 +77,7 @@ impl Engine for RemotionEngine {
             }
             std::fs::write(&hash_file, install_hash(&pkg).to_string())?;
         }
-        let cmd = Self::build_command(project_dir, out);
+        let cmd = Self::build_command(project_dir, &out_abs);
         let res = self.exec.run(&cmd).await?;
         if res.status != 0 {
             anyhow::bail!(
@@ -212,6 +219,30 @@ mod tests {
         let calls = mock.calls.lock().unwrap();
         assert_eq!(calls.len(), 1); // render only
         assert_eq!(calls[0].program, "npx");
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn relative_output_path_becomes_absolute() -> anyhow::Result<()> {
+        let dir = std::env::temp_dir().join(format!("vf-rema-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("proj"))?;
+        let pkg = "{\"name\":\"vf-project\"}";
+        std::fs::write(dir.join("proj/package.json"), pkg)?;
+        std::fs::create_dir_all(dir.join("proj/node_modules"))?;
+        std::fs::write(dir.join("proj/.vf-install-hash"), install_hash(pkg).to_string())?;
+        let mock = Arc::new(MockExecutor::with_outputs(vec![RunOutput {
+            status: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        }]));
+        let engine = RemotionEngine::new(Box::new(Recorder { inner: mock.clone() }));
+        let rel_out = std::path::Path::new("rel-out.mp4");
+        engine.render(&spec(), &dir.join("proj"), rel_out).await?;
+        let calls = mock.calls.lock().unwrap();
+        let out_arg = calls[0].args.last().unwrap();
+        assert!(out_arg.starts_with('/'), "out arg must be absolute, got: {out_arg}");
         let _ = std::fs::remove_dir_all(&dir);
         Ok(())
     }
