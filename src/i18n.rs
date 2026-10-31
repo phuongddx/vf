@@ -147,6 +147,27 @@ pub fn post_skipped(lang: Lang) -> String {
     }
 }
 
+pub fn compose_offline(lang: Lang) -> String {
+    match lang {
+        Lang::En => "compose offline: no key — using vendored template composition".into(),
+        Lang::Vi => "compose offline: chưa có key — dùng composition mẫu có sẵn".into(),
+    }
+}
+
+pub fn compose_written(lang: Lang) -> String {
+    match lang {
+        Lang::En => "compose: LLM wrote the hyperframes composition".into(),
+        Lang::Vi => "compose: LLM đã viết composition hyperframes".into(),
+    }
+}
+
+pub fn compose_fallback(lang: Lang, reason: &str) -> String {
+    match lang {
+        Lang::En => format!("compose: LLM output unusable ({reason}) — using vendored template"),
+        Lang::Vi => format!("compose: kết quả LLM không dùng được ({reason}) — dùng composition mẫu"),
+    }
+}
+
 pub fn codegen_usage_combined(
     lang: Lang,
     spec_in: u64,
@@ -226,5 +247,8 @@ mod tests {
         assert!(codegen_usage_combined(Lang::Vi, 10, 20, 30, 40, None).contains("spec 10/20 · codegen 30/40"));
         assert!(codegen_usage_combined(Lang::En, 1, 2, 3, 4, Some(0.5)).contains("~$0.5000"));
         assert!(post_skipped(Lang::Vi).contains("bỏ qua post"));
+        assert!(compose_offline(Lang::Vi).contains("compose offline"));
+        assert!(compose_written(Lang::En).contains("composition"));
+        assert!(compose_fallback(Lang::Vi, "lint").contains("lint"));
     }
 }
