@@ -28,4 +28,6 @@ pub enum Command {
     Skills { url: Option<String> },
     /// Check toolchain health (git, node, npx, ffmpeg)
     Doctor,
+    /// Show pipeline status for a project
+    Status { project: String },
 }

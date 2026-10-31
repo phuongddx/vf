@@ -242,3 +242,31 @@ fn make_max_cost_zero_bails() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn status_shows_stages_after_make() {
+    let tmp = std::env::temp_dir().join(format!("vf-stt-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .env("VF_ENGINE", "dry-run")
+        .current_dir(&tmp)
+        .arg("make")
+        .arg("status demo")
+        .assert()
+        .success();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .current_dir(&tmp)
+        .arg("status")
+        .arg("status-demo")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("render: done"))
+        .stdout(predicates::str::contains("post: done"));
+
+    let _ = fs::remove_dir_all(&tmp);
+}
