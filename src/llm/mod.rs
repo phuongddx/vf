@@ -18,6 +18,7 @@ pub trait LlmClient: Send + Sync {
 
 pub mod anthropic;
 pub mod openai;
+pub mod registry;
 
 #[cfg(test)]
 mod tests {
