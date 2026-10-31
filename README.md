@@ -20,6 +20,16 @@ Việt Nam 🇻🇳 / [English](#english)
 vf make "app fintech cho Gen Z" --template launch
 ```
 
+## Demo
+
+<div align="center">
+
+<video src="docs/demo.mp4" controls muted width="270"></video>
+
+*Video do chính vf render (Remotion) — pipeline: spec → scaffold → render → mp4.*
+
+</div>
+
 ## Cài đặt
 
 **Binary (Linux x86_64, static musl — không cần dependency):**
@@ -71,11 +81,21 @@ Có key (`export ZAI_CODING_API_KEY=***`): spec được sinh bằng GLM, kèm t
 
 > Ghi chú GLM Coding Plan: gói subscription của Z.ai giới hạn cho công cụ được hỗ trợ chính thức; vf dùng endpoint dạng "other tools" (best-effort) — bạn tự chịu trách nhiệm với điều khoản gói của mình. Xem [docs.z.ai/devpack/tool/others](https://docs.z.ai/devpack/tool/others).
 
+### Render thật
+
+Có `node` + `npx` là `vf make` render video thật (mặc định `VF_ENGINE=remotion`):
+`npm install` (tự skip khi hash khớp) → `npx remotion render vf-main draft.mp4` → ffmpeg → `final.mp4`.
+
+- Lần render đầu tải npm dependencies + Chrome Headless Shell (~150 MB)
+- Thiếu `ffmpeg`? `final.mp4` là bản copy của `draft.mp4` (warning)
+- Thiếu toolchain? vf in đúng lệnh manual, giữ nguyên artifacts, exit 0
+- `VF_TSC=0` tắt validate TypeScript của scene LLM (mặc định chạy `npx tsc --noEmit`)
+
 ## Trạng thái (v0.2.0)
 
 - ✅ Pipeline end-to-end với **dry-run engine** (mặc định): `video.spec.json` + scaffold + `draft.mp4` + `final.mp4`
-- ✅ **LLM spec generation thật**: Z.ai GLM default (Anthropic/OpenAI protocol), timeout/retry, graceful offline/fallback; codegen thật = phase sau
-- ✅ Remotion engine: sinh project scaffold + lệnh `npx` render
+- ✅ **LLM spec generation + hybrid codegen**: Z.ai GLM default; scene `custom` → LLM sinh component Remotion thật (validate `tsc`, fail → fallback template)
+- ✅ **Render thật end-to-end**: scaffold Remotion project hoàn chỉnh (Player data-driven + custom registry) + `npm install` + `npx remotion render` → mp4 thật
 - ✅ Skill manager: install từ git + lockfile pin; style presets; spec templates
 - ✅ `vf doctor` (toolchain + TLS + network) / `vf status` / i18n VI-EN / cost guard (`--plan`, `--max-cost`)
 
@@ -98,6 +118,6 @@ Kiến trúc engine hướng tới: **Remotion** (mặc định) + **HyperFrames
 vf make "fintech app for Gen Z" --template launch --plan
 ```
 
-Install a static musl binary from [Releases](https://github.com/phuongddx/vf/releases) or build with Rust ≥ 1.85 (`cargo build --release --locked`; TLS is on by default — use `--no-default-features` on hosts without a C compiler). Providers work out of the box: built-in `glm-coding` (Anthropic protocol, Z.ai Coding Plan) and `glm` (OpenAI protocol) profiles — export `ZAI_CODING_API_KEY` or `ZAI_API_KEY` to enable real LLM-backed spec generation; without a key, vf runs in offline template mode. `vf make` never fails because of LLM errors (retry → template fallback). Override or add providers via `~/.config/vf/config.toml` (`VF_CONFIG` relocates the path).
+Install a static musl binary from [Releases](https://github.com/phuongddx/vf/releases) or build with Rust ≥ 1.85 (`cargo build --release --locked`; TLS is on by default — use `--no-default-features` on hosts without a C compiler). Providers work out of the box: built-in `glm-coding` (Anthropic protocol, Z.ai Coding Plan) and `glm` (OpenAI protocol) profiles — export `ZAI_CODING_API_KEY` or `ZAI_API_KEY` to enable real LLM-backed spec generation AND hybrid scene codegen (custom scenes become LLM-written Remotion components, tsc-validated with template fallback); without a key, vf runs in offline template mode. With node + npx present, `vf make` renders a REAL mp4 end-to-end (npm install + npx remotion render; first run downloads Chrome Headless Shell ~150 MB). `vf make` never fails because of LLM or render problems — it degrades gracefully and prints manual commands. Override or add providers via `~/.config/vf/config.toml` (`VF_CONFIG` relocates the path). The demo video above was rendered by vf itself.
 
 vf code is MIT-licensed. Remotion (invoked via `npx` at runtime, not bundled) is free only for companies of up to 3 people — see their [license](https://www.remotion.dev/docs/license). HyperFrames is Apache-2.0.
