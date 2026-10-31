@@ -608,7 +608,7 @@ pub async fn compose_hf_stage(
     };
     let client = crate::llm::retry::RetryingClient::new(inner);
     let mut feedback: Option<String> = None;
-    for _attempt in 0..2 {
+    for _attempt in 0..3 {
         let req = compose_request(idea, 10, feedback.as_deref());
         match client.complete(&req).await {
             Err(e) => {

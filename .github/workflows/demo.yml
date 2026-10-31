@@ -70,7 +70,7 @@ jobs:
         run: |
           mkdir -p "$HOME/hf-run"
           cd "$HOME/hf-run"
-          "$GITHUB_WORKSPACE/target/release/vf" make "vf video forge — bold intro title scaling in, three feature lines appearing one by one, closing vf logo card, dark gradient background with accent glow"
+          "$GITHUB_WORKSPACE/target/release/vf" make "vf hyperframes demo"
           test -f vf-projects/vf-hyperframes-demo/draft.mp4
 
       - name: Commit hyperframes demo
