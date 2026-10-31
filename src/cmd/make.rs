@@ -20,6 +20,14 @@ pub async fn run(
             println!("plan: {s}");
         }
         println!("estimate: {calls} LLM calls (~${est:.3})");
+        let plan_cfg = crate::config::Config::load()?.effective();
+        let target = plan_cfg.routing.spec.clone().unwrap_or_default();
+        let has_key = plan_cfg
+            .providers
+            .get(&target)
+            .map(|p| std::env::var(&p.api_key_env).map(|v| !v.is_empty()).unwrap_or(false))
+            .unwrap_or(false);
+        println!("provider: {target} ({})", if has_key { "llm" } else { "offline" });
         return Ok(());
     }
     let lang = crate::i18n::Lang::from_env();
@@ -33,6 +41,27 @@ pub async fn run(
     } else {
         State::new(&slug)
     };
+
+    let cfg = crate::config::Config::load()?.effective();
+    let spec_path = project_dir.join("video.spec.json");
+    if !spec_path.exists() {
+        match generate_spec_with_llm(&cfg, idea, &t).await {
+            LlmSpecOutcome::Generated { spec, usage, model } => {
+                std::fs::write(&spec_path, spec.to_json_string()?)?;
+                let cost = crate::llm::pricing::estimate_cost(&model, &usage);
+                println!(
+                    "{}",
+                    crate::i18n::usage_line(lang, usage.input_tokens, usage.output_tokens, cost)
+                );
+            }
+            LlmSpecOutcome::Offline(_) => {
+                println!("{}", crate::i18n::offline_mode(lang));
+            }
+            LlmSpecOutcome::Fallback(reason) => {
+                println!("{}", crate::i18n::llm_fallback(lang, &reason));
+            }
+        }
+    }
 
     while let Some(stage) = state.next_stage() {
         if stage == "style" {
@@ -143,6 +172,98 @@ async fn run_post(project_dir: &std::path::Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub enum LlmSpecOutcome {
+    Generated { spec: crate::ir::VideoSpec, usage: crate::llm::Usage, model: String },
+    Offline(String),
+    Fallback(String),
+}
+
+/// Strip markdown fences / surrounding prose; return the outermost {...} span.
+pub fn extract_json(text: &str) -> Option<String> {
+    let t = text.trim();
+    let t = t.strip_prefix("```json").or_else(|| t.strip_prefix("```")).unwrap_or(t);
+    let t = t.strip_suffix("```").unwrap_or(t);
+    let t = t.trim();
+    let start = t.find('{')?;
+    let end = t.rfind('}')?;
+    (start <= end).then(|| t[start..=end].to_string())
+}
+
+fn spec_request(
+    idea: &str,
+    t: &crate::templates::Template,
+    feedback: Option<&str>,
+) -> crate::llm::ChatRequest {
+    let system = "You are a video producer. Reply with ONLY a JSON object of shape:\n\
+{ \"meta\": { \"title\": string, \"duration\": number, \"fps\": number, \
+\"ratio\": \"9:16\"|\"16:9\"|\"1:1\", \"lang\": string }, \
+\"style\": { \"preset\": string, \"palette\": string[], \"font\": string }, \
+\"scenes\": [ { \"id\": string, \"duration\": number, \"narration\": string, \
+\"elements\": [], \"transition\": string } ] }\n\
+Rules: at least one scene; meta.duration equals the sum of scene durations; fps > 0.";
+    let mut user = format!("Idea: {idea}\nTemplate: {t:?}\nOutput the JSON object only.");
+    if let Some(fb) = feedback {
+        user.push_str(&format!("\nYour previous output failed validation: {fb}. Fix it."));
+    }
+    crate::llm::ChatRequest { system: Some(system.into()), user }
+}
+
+pub async fn generate_spec_with_llm(
+    cfg: &crate::config::Config,
+    idea: &str,
+    t: &crate::templates::Template,
+) -> LlmSpecOutcome {
+    use crate::llm::LlmClient as _;
+    let Some(provider_name) = cfg.routing.spec.clone() else {
+        return LlmSpecOutcome::Offline("no routing".into());
+    };
+    let Some(p) = cfg.providers.get(&provider_name) else {
+        return LlmSpecOutcome::Offline(format!("unknown provider '{provider_name}'"));
+    };
+    let key_missing = std::env::var(&p.api_key_env).map(|v| v.is_empty()).unwrap_or(true);
+    if key_missing {
+        return LlmSpecOutcome::Offline(p.api_key_env.clone());
+    }
+    if crate::llm::check_tls(&p.base_url).is_err() {
+        return LlmSpecOutcome::Offline("no tls in this binary".into());
+    }
+    let Ok(inner) = crate::llm::registry::build(&provider_name, cfg) else {
+        return LlmSpecOutcome::Offline("provider build failed".into());
+    };
+    let client = crate::llm::retry::RetryingClient::new(inner);
+    let mut feedback: Option<String> = None;
+    for _attempt in 0..2 {
+        let req = spec_request(idea, t, feedback.as_deref());
+        match client.complete(&req).await {
+            Err(e) => {
+                let reason = crate::i18n::llm_error(crate::i18n::Lang::En, &e, &p.api_key_env);
+                return LlmSpecOutcome::Fallback(reason);
+            }
+            Ok(resp) => {
+                let parsed = extract_json(&resp.text)
+                    .and_then(|s| crate::ir::VideoSpec::from_json_str(&s).ok());
+                match parsed {
+                    Some(spec) => match spec.validate() {
+                        Ok(()) => {
+                            return LlmSpecOutcome::Generated {
+                                spec,
+                                usage: resp.usage.unwrap_or(crate::llm::Usage {
+                                    input_tokens: 0,
+                                    output_tokens: 0,
+                                }),
+                                model: p.model.clone(),
+                            }
+                        }
+                        Err(e) => feedback = Some(e),
+                    },
+                    None => feedback = Some("output was not a valid JSON spec".into()),
+                }
+            }
+        }
+    }
+    LlmSpecOutcome::Fallback(feedback.unwrap_or_else(|| "invalid spec after retry".into()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -166,5 +287,25 @@ mod tests {
         assert_eq!(super::estimate_calls(&Template::Default), 2);
         assert_eq!(super::estimate_calls(&Template::Launch), 4);
         assert_eq!(super::estimate_calls(&Template::Explainer), 4);
+    }
+
+    #[test]
+    fn extract_json_strips_fences_and_prose() {
+        let fenced = "```json\n{\"a\":1}\n```";
+        assert_eq!(super::extract_json(fenced).as_deref(), Some("{\"a\":1}"));
+        let prose = "Here you go:\n{\"b\":2} hope it helps";
+        assert_eq!(super::extract_json(prose).as_deref(), Some("{\"b\":2}"));
+        assert_eq!(super::extract_json("no json at all"), None);
+    }
+
+    #[test]
+    fn spec_request_appends_feedback_on_second_attempt() {
+        use crate::templates::Template;
+        let t = Template::Default;
+        let first = super::spec_request("idea", &t, None);
+        assert!(first.user.contains("idea"));
+        assert!(first.system.as_deref().unwrap_or("").contains("meta.duration"));
+        let second = super::spec_request("idea", &t, Some("scenes empty"));
+        assert!(second.user.contains("scenes empty"));
     }
 }
