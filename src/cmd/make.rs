@@ -14,6 +14,16 @@ pub async fn run(idea: &str) -> anyhow::Result<()> {
     };
 
     while let Some(stage) = state.next_stage() {
+        if stage == "style" {
+            let style_name = std::env::var("VF_STYLE").unwrap_or_else(|_| "mg-07".into());
+            let style = crate::styles::resolve(&style_name).ok_or_else(|| {
+                anyhow::anyhow!("unknown style '{style_name}' — presets: mg-01..mg-15")
+            })?;
+            std::fs::write(
+                project_dir.join("style.json"),
+                serde_json::to_string_pretty(&style)?,
+            )?;
+        }
         if stage == "render" {
             run_render(&slug, &project_dir).await?;
         }

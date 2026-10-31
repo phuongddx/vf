@@ -7,6 +7,7 @@ mod ir;
 mod llm;
 mod skills;
 mod state;
+mod styles;
 
 use clap::Parser;
 

@@ -116,3 +116,28 @@ fn skills_install_and_list_from_local_repo() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn make_writes_style_json() {
+    let tmp = std::env::temp_dir().join(format!("vf-sty-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .env("VF_ENGINE", "dry-run")
+        .env("VF_STYLE", "mg-03")
+        .current_dir(&tmp)
+        .arg("make")
+        .arg("style demo")
+        .assert()
+        .success();
+
+    let style =
+        fs::read_to_string(tmp.join("vf-projects").join("style-demo").join("style.json"))
+            .unwrap();
+    assert!(style.contains("mg-03"));
+    assert!(style.contains("Montserrat"));
+
+    let _ = fs::remove_dir_all(&tmp);
+}
