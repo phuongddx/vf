@@ -509,3 +509,27 @@ fn make_offline_codegen_skips_silently() {
         .stdout(predicates::str::contains("chế độ offline"));
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn make_hyperframes_offline_composes_template() {
+    let dir = temp_dir_for("make-hfoff");
+    let cfg_path = dir.join("config.toml");
+    fs::write(&cfg_path, "# defaults only\n").unwrap();
+    Command::cargo_bin("vf")
+        .unwrap()
+        .arg("make")
+        .arg("hf offline idea")
+        .current_dir(&dir)
+        .env("VF_CONFIG", &cfg_path)
+        .env("VF_ENGINE", "hyperframes")
+        .env("VF_LANG", "vi")
+        .env("ZAI_CODING_API_KEY", "")
+        .env("VF_LINT", "0")
+        .env("VF_RENDER_SKIP", "1")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("compose offline"));
+    let html = fs::read_to_string(dir.join("vf-projects/hf-offline-idea/index.html")).unwrap();
+    assert!(html.contains("data-fps"));
+    let _ = fs::remove_dir_all(&dir);
+}

@@ -43,6 +43,32 @@ pub async fn run(
     };
 
     let cfg = crate::config::Config::load()?.effective();
+    let engine_name = std::env::var("VF_ENGINE").unwrap_or_else(|_| "remotion".into());
+    if engine_name == "hyperframes" {
+        let exec = crate::exec::TokioExecutor::new();
+        match compose_hf_stage(&cfg, idea, &project_dir, &exec).await {
+            ComposeOutcome::Skipped => {}
+            ComposeOutcome::Offline => println!("{}", crate::i18n::compose_offline(lang)),
+            ComposeOutcome::Composed { usage } => {
+                println!("{}", crate::i18n::compose_written(lang));
+                if let Some(u) = usage {
+                    let model = cfg
+                        .providers
+                        .get(cfg.routing.spec.as_deref().unwrap_or("glm-coding"))
+                        .map(|p| p.model.clone())
+                        .unwrap_or_default();
+                    let cost = crate::llm::pricing::estimate_cost(&model, &u);
+                    println!(
+                        "{}",
+                        crate::i18n::usage_line(lang, u.input_tokens, u.output_tokens, cost)
+                    );
+                }
+            }
+            ComposeOutcome::Fallback { reason } => {
+                println!("{}", crate::i18n::compose_fallback(lang, &reason));
+            }
+        }
+    } else {
     let spec_path = project_dir.join("video.spec.json");
     let mut spec_usage: Option<crate::llm::Usage> = None;
     if !spec_path.exists() {
@@ -107,6 +133,7 @@ pub async fn run(
             )
         );
     }
+    } // end remotion branch
 
     while let Some(stage) = state.next_stage() {
         if stage == "style" {
@@ -123,7 +150,12 @@ pub async fn run(
             if let Err(e) = run_render(&project_dir).await {
                 if !e.to_string().contains("VF_RENDER_SKIPPED") {
                     let lang2 = crate::i18n::Lang::from_env();
-                    println!("{}", crate::i18n::render_skipped_manual(lang2, "npm install && npx remotion render src/index.tsx vf-main draft.mp4"));
+                    let manual2 = if engine_name == "hyperframes" {
+                        "npx hyperframes render --output draft.mp4"
+                    } else {
+                        "npm install && npx remotion render src/index.tsx vf-main draft.mp4"
+                    };
+                    println!("{}", crate::i18n::render_skipped_manual(lang2, manual2));
                 }
                 break;
             }
@@ -163,23 +195,40 @@ pub fn estimate_calls(t: &crate::templates::Template) -> u64 {
 }
 
 async fn run_render(project_dir: &std::path::Path) -> anyhow::Result<()> {
+    if std::env::var("VF_RENDER_SKIP").map(|v| v == "1").unwrap_or(false) {
+        return Ok(()); // test knob: compose/lint stages verified, render skipped
+    }
     let engine_name = std::env::var("VF_ENGINE").unwrap_or_else(|_| "remotion".into());
     let engine = crate::engine::build_engine(&engine_name)?;
-    let spec_path = project_dir.join("video.spec.json");
-    let spec = crate::ir::VideoSpec::from_json_str(&std::fs::read_to_string(&spec_path)?)?;
-    crate::engine::scaffold::write_scaffold(project_dir, &spec)?;
-    // Scaffold rewrite resets registry.ts — re-register existing custom scenes.
-    crate::engine::scaffold::rebuild_registry(project_dir)?;
-    if engine_name == "remotion" {
+    let spec = if engine_name == "hyperframes" {
+        // Delegate mode: index.html is the artifact; the spec is unused.
+        crate::ir::VideoSpec::demo("hyperframes")
+    } else {
+        let spec_path = project_dir.join("video.spec.json");
+        crate::ir::VideoSpec::from_json_str(&std::fs::read_to_string(&spec_path)?)?
+    };
+    if engine_name != "hyperframes" {
+        crate::engine::scaffold::write_scaffold(project_dir, &spec)?;
+        // Scaffold rewrite resets registry.ts — re-register existing custom scenes.
+        crate::engine::scaffold::rebuild_registry(project_dir)?;
+    }
+    if engine_name != "dry-run" {
         let lang = crate::i18n::Lang::from_env();
+        let manual = if engine_name == "hyperframes" {
+            "npx hyperframes render --output draft.mp4"
+        } else {
+            "npm install && npx remotion render src/index.tsx vf-main draft.mp4"
+        };
         let exec = crate::exec::TokioExecutor::new();
         let ready = crate::cmd::doctor::tool_available(&exec, "node").await
             && crate::cmd::doctor::tool_available(&exec, "npx").await;
         if !ready {
-            println!("{}", crate::i18n::render_skipped_manual(lang, "npm install && npx remotion render src/index.tsx vf-main draft.mp4"));
+            println!("{}", crate::i18n::render_skipped_manual(lang, manual));
             anyhow::bail!("VF_RENDER_SKIPPED");
         }
-        println!("{}", crate::i18n::npm_install_running(lang));
+        if engine_name == "remotion" {
+            println!("{}", crate::i18n::npm_install_running(lang));
+        }
         println!("{}", crate::i18n::render_running(lang));
         println!("{}", crate::i18n::chrome_first_run_note(lang));
     }
