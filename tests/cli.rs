@@ -60,6 +60,7 @@ fn make_dry_run_renders_draft() {
     assert_eq!(fs::read(dir.join("draft.mp4")).unwrap(), b"dry-run");
     assert!(dir.join("package.json").exists());
     assert!(dir.join("video.spec.json").exists());
+    assert_eq!(fs::read(dir.join("final.mp4")).unwrap(), b"dry-run");
 
     let _ = fs::remove_dir_all(&tmp);
 }

@@ -1,3 +1,4 @@
+use crate::exec::Executor;
 use crate::state::State;
 
 pub async fn run(idea: &str) -> anyhow::Result<()> {
@@ -15,6 +16,9 @@ pub async fn run(idea: &str) -> anyhow::Result<()> {
     while let Some(stage) = state.next_stage() {
         if stage == "render" {
             run_render(&slug, &project_dir).await?;
+        }
+        if stage == "post" {
+            run_post(&project_dir).await?;
         }
         println!("stage: {stage} ok");
         state.mark_done(stage, None);
@@ -44,11 +48,69 @@ async fn run_render(slug: &str, project_dir: &std::path::Path) -> anyhow::Result
         crate::ir::VideoSpec::demo(slug)
     };
     // Pipeline owns the IR artifact: video.spec.json lands in project_dir for
-    // EVERY engine (Quy tắc vàng: stage ghi artifact), not just Remotion.
+    // EVERY engine (stage ghi artifact), not just Remotion.
     std::fs::write(&spec_path, spec.to_json_string()?)?;
     crate::engine::scaffold::write_scaffold(project_dir)?;
     engine
         .render(&spec, project_dir, &project_dir.join("draft.mp4"))
         .await?;
     Ok(())
+}
+
+/// ffmpeg remux command: copy draft into final without re-encoding.
+pub fn post_command(
+    draft: &std::path::Path,
+    final_path: &std::path::Path,
+    project_dir: &std::path::Path,
+) -> crate::exec::CommandSpec {
+    crate::exec::CommandSpec {
+        program: "ffmpeg".into(),
+        args: vec![
+            "-y".into(),
+            "-i".into(),
+            draft.to_string_lossy().into_owned(),
+            "-c".into(),
+            "copy".into(),
+            final_path.to_string_lossy().into_owned(),
+        ],
+        cwd: Some(project_dir.to_path_buf()),
+    }
+}
+
+async fn run_post(project_dir: &std::path::Path) -> anyhow::Result<()> {
+    let draft = project_dir.join("draft.mp4");
+    let final_path = project_dir.join("final.mp4");
+    let dry = std::env::var("VF_ENGINE")
+        .map(|v| v == "dry-run")
+        .unwrap_or(false);
+    if dry {
+        std::fs::copy(&draft, &final_path)?;
+    } else {
+        let exec = crate::exec::TokioExecutor::new();
+        let res = exec
+            .run(&post_command(&draft, &final_path, project_dir))
+            .await?;
+        if res.status != 0 {
+            anyhow::bail!("ffmpeg post failed (exit {}): {}", res.status, res.stderr);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    #[test]
+    fn post_command_shape() {
+        let cmd = super::post_command(Path::new("/d.mp4"), Path::new("/f.mp4"), Path::new("/p"));
+        assert_eq!(cmd.program, "ffmpeg");
+        assert_eq!(cmd.args[0], "-y");
+        assert_eq!(cmd.args[1], "-i");
+        assert_eq!(cmd.args[2], "/d.mp4");
+        assert_eq!(cmd.args[3], "-c");
+        assert_eq!(cmd.args[4], "copy");
+        assert_eq!(cmd.args[5], "/f.mp4");
+        assert_eq!(cmd.cwd.as_deref(), Some(Path::new("/p")));
+    }
 }
