@@ -83,6 +83,31 @@ impl VideoSpec {
         }
         Ok(())
     }
+
+    /// Minimal valid spec for pipeline runs before LLM codegen lands (Plan 3).
+    pub fn demo(title: &str) -> Self {
+        Self {
+            meta: Meta {
+                title: title.to_string(),
+                duration: 4,
+                fps: 30,
+                ratio: Ratio::NineBySixteen,
+                lang: "vi".into(),
+            },
+            style: Style {
+                preset: "default".into(),
+                palette: vec!["#0F172A".into()],
+                font: "Inter".into(),
+            },
+            scenes: vec![Scene {
+                id: "s1".into(),
+                duration: 4,
+                narration: Some(title.to_string()),
+                elements: vec![],
+                transition: None,
+            }],
+        }
+    }
 }
 
 #[cfg(test)]
@@ -121,5 +146,12 @@ mod tests {
         let mut spec2 = VideoSpec::from_json_str(SAMPLE).unwrap();
         spec2.meta.duration = 9; // scenes sum to 4
         assert!(spec2.validate().is_err());
+    }
+
+    #[test]
+    fn demo_validates() {
+        let spec = VideoSpec::demo("hello");
+        assert!(spec.validate().is_ok());
+        assert_eq!(spec.meta.title, "hello");
     }
 }

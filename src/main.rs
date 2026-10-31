@@ -9,11 +9,12 @@ mod state;
 
 use clap::Parser;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = cli::Cli::parse();
     let result = match cli.command {
-        cli::Command::Config => cmd::config_cmd::run(),
-        cli::Command::Make { idea } => cmd::make::run(&idea),
+        cli::Command::Config => cmd::config_cmd::run().await,
+        cli::Command::Make { idea } => cmd::make::run(&idea).await,
     };
     if let Err(e) = result {
         eprintln!("vf: {e:#}");

@@ -26,6 +26,7 @@ fn make_creates_project_with_state() {
     fs::create_dir_all(&tmp).unwrap();
 
     Command::cargo_bin("vf").unwrap()
+        .env("VF_ENGINE", "dry-run")
         .current_dir(&tmp)
         .arg("make")
         .arg("demo idea")
@@ -37,6 +38,28 @@ fn make_creates_project_with_state() {
         fs::read_to_string(tmp.join("vf-projects").join("demo-idea").join("state.json")).unwrap();
     assert!(state.contains("\"post\""));
     assert!(state.contains("\"done\""));
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn make_dry_run_renders_draft() {
+    let tmp = std::env::temp_dir().join(format!("vf-dry-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    Command::cargo_bin("vf").unwrap()
+        .env("VF_ENGINE", "dry-run")
+        .current_dir(&tmp)
+        .arg("make")
+        .arg("demo idea")
+        .assert()
+        .success();
+
+    let dir = tmp.join("vf-projects").join("demo-idea");
+    assert_eq!(fs::read(dir.join("draft.mp4")).unwrap(), b"dry-run");
+    assert!(dir.join("package.json").exists());
+    assert!(dir.join("video.spec.json").exists());
 
     let _ = fs::remove_dir_all(&tmp);
 }

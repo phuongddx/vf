@@ -1,6 +1,6 @@
 use crate::config::Config;
 
-pub fn run() -> anyhow::Result<()> {
+pub async fn run() -> anyhow::Result<()> {
     let cfg = Config::load()?;
     println!("config: {}", Config::path().display());
     if cfg.providers.is_empty() {
