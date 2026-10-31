@@ -26,7 +26,11 @@ vf make "app fintech cho Gen Z" --template launch
 
 <video src="docs/demo.mp4" controls muted width="270"></video>
 
-*Video do chính vf render (Remotion) — pipeline: spec → scaffold → render → mp4.*
+*Remotion — spec → scaffold → render → mp4.*
+
+<video src="docs/demo-hyperframes.mp4" controls muted width="270"></video>
+
+*HyperFrames — LLM viết composition HTML → lint → render → mp4.*
 
 </div>
 
@@ -91,11 +95,21 @@ Có `node` + `npx` là `vf make` render video thật (mặc định `VF_ENGINE=r
 - Thiếu toolchain? vf in đúng lệnh manual, giữ nguyên artifacts, exit 0
 - `VF_TSC=0` tắt validate TypeScript của scene LLM (mặc định chạy `npx tsc --noEmit`)
 
+### Đổi engine
+
+| Engine | `VF_ENGINE` | Cách hoạt động |
+|---|---|---|
+| Remotion (mặc định) | `remotion` | IR spec → React scaffold + custom scenes (TSX) → `npx remotion render` |
+| HyperFrames | `hyperframes` | LLM viết composition HTML trực tiếp → `npx hyperframes lint` → `npx hyperframes render` |
+
+Cả hai đều có: offline template fallback, make-never-dies, usage/cost reporting.
+
 ## Trạng thái (v0.3.0)
 
 - ✅ Pipeline end-to-end với **dry-run engine** (mặc định): `video.spec.json` + scaffold + `draft.mp4` + `final.mp4`
 - ✅ **LLM spec generation + hybrid codegen**: Z.ai GLM default; scene `custom` → LLM sinh component Remotion thật (validate `tsc`, fail → fallback template)
 - ✅ **Render thật end-to-end**: scaffold Remotion project hoàn chỉnh (Player data-driven + custom registry) + `npm install` + `npx remotion render` → mp4 thật
+- ✅ **HyperFrames engine** (delegate): LLM viết composition HTML → lint gate → render qua `npx hyperframes render`
 - ✅ Skill manager: install từ git + lockfile pin; style presets; spec templates
 - ✅ `vf doctor` (toolchain + TLS + network) / `vf status` / i18n VI-EN / cost guard (`--plan`, `--max-cost`)
 
@@ -118,6 +132,6 @@ Kiến trúc engine hướng tới: **Remotion** (mặc định) + **HyperFrames
 vf make "fintech app for Gen Z" --template launch --plan
 ```
 
-Install a static musl binary from [Releases](https://github.com/phuongddx/vf/releases) or build with Rust ≥ 1.85 (`cargo build --release --locked`; TLS is on by default — use `--no-default-features` on hosts without a C compiler). Providers work out of the box: built-in `glm-coding` (Anthropic protocol, Z.ai Coding Plan) and `glm` (OpenAI protocol) profiles — export `ZAI_CODING_API_KEY` or `ZAI_API_KEY` to enable real LLM-backed spec generation AND hybrid scene codegen (custom scenes become LLM-written Remotion components, tsc-validated with template fallback); without a key, vf runs in offline template mode. With node + npx present, `vf make` renders a REAL mp4 end-to-end (npm install + npx remotion render; first run downloads Chrome Headless Shell ~150 MB). `vf make` never fails because of LLM or render problems — it degrades gracefully and prints manual commands. Override or add providers via `~/.config/vf/config.toml` (`VF_CONFIG` relocates the path). The demo video above was rendered by vf itself.
+Install a static musl binary from [Releases](https://github.com/phuongddx/vf/releases) or build with Rust ≥ 1.85 (`cargo build --release --locked`; TLS is on by default — use `--no-default-features` on hosts without a C compiler). Providers work out of the box: built-in `glm-coding` (Anthropic protocol, Z.ai Coding Plan) and `glm` (OpenAI protocol) profiles — export `ZAI_CODING_API_KEY` or `ZAI_API_KEY` to enable real LLM-backed spec generation AND hybrid scene codegen (custom scenes become LLM-written Remotion components, tsc-validated with template fallback); without a key, vf runs in offline template mode. With node + npx present, `vf make` renders a REAL mp4 end-to-end (npm install + npx remotion render; first run downloads Chrome Headless Shell ~150 MB). `vf make` never fails because of LLM or render problems — it degrades gracefully and prints manual commands. Override or add providers via `~/.config/vf/config.toml` (`VF_CONFIG` relocates the path). The demo videos above were both rendered by vf itself — the first through the Remotion engine, the second through the HyperFrames engine (`VF_ENGINE=hyperframes`: the LLM writes the HTML composition directly, linted and rendered via `npx hyperframes`).
 
 vf code is MIT-licensed. Remotion (invoked via `npx` at runtime, not bundled) is free only for companies of up to 3 people — see their [license](https://www.remotion.dev/docs/license). HyperFrames is Apache-2.0.
