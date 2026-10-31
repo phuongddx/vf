@@ -10,7 +10,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 async-trait = "0.1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process"] }
 # SDD ruling: rustls-tls dropped for Plan 1 (no C compiler on gateway; ring/aws-lc need cc).
 # All provider tests use wiremock over localhost HTTP. TLS returns in a later plan.
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
