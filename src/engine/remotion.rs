@@ -19,16 +19,29 @@ impl RemotionEngine {
             args: vec![
                 "remotion".into(),
                 "render".into(),
-                // SDD ruling (plan defect #5): plan doc said "src/index.ts";
-                // scaffold writer (Task 4) emits src/index.tsx — unified here.
                 "src/index.tsx".into(),
-                "vf-video".into(),
+                "vf-main".into(),
                 out.to_string_lossy().into_owned(),
-                "--props=video.spec.json".into(),
             ],
             cwd: Some(project_dir.to_path_buf()),
         }
     }
+
+    pub fn npm_install_command(project_dir: &Path) -> CommandSpec {
+        CommandSpec {
+            program: "npm".into(),
+            args: vec!["install".into(), "--no-audit".into(), "--no-fund".into()],
+            cwd: Some(project_dir.to_path_buf()),
+        }
+    }
+}
+
+/// Stable hash of package.json — used to skip redundant npm installs.
+fn install_hash(pkg_json: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    pkg_json.hash(&mut h);
+    h.finish()
 }
 
 #[async_trait]
@@ -44,6 +57,19 @@ impl Engine for RemotionEngine {
         out: &Path,
     ) -> anyhow::Result<PathBuf> {
         std::fs::write(project_dir.join("video.spec.json"), spec.to_json_string()?)?;
+        let pkg = std::fs::read_to_string(project_dir.join("package.json")).unwrap_or_default();
+        let hash_file = project_dir.join(".vf-install-hash");
+        let installed = project_dir.join("node_modules").exists()
+            && std::fs::read_to_string(&hash_file)
+                .map(|s| s.trim() == install_hash(&pkg).to_string())
+                .unwrap_or(false);
+        if !installed {
+            let res = self.exec.run(&Self::npm_install_command(project_dir)).await?;
+            if res.status != 0 {
+                anyhow::bail!("npm install failed (exit {}): {}", res.status, res.stderr);
+            }
+            std::fs::write(&hash_file, install_hash(&pkg).to_string())?;
+        }
         let cmd = Self::build_command(project_dir, out);
         let res = self.exec.run(&cmd).await?;
         if res.status != 0 {
@@ -92,7 +118,12 @@ mod tests {
     #[tokio::test]
     async fn builds_command_and_writes_props_file() -> anyhow::Result<()> {
         let dir = std::env::temp_dir().join(format!("vf-rem-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir)?;
+        let pkg = "{\"name\":\"vf-project\"}";
+        std::fs::write(dir.join("package.json"), pkg)?;
+        std::fs::create_dir_all(dir.join("node_modules"))?;
+        std::fs::write(dir.join(".vf-install-hash"), install_hash(pkg).to_string())?;
         let mock = Arc::new(MockExecutor::with_outputs(vec![RunOutput {
             status: 0,
             stdout: String::new(),
@@ -109,6 +140,8 @@ mod tests {
             &["remotion".to_string(), "render".to_string()]
         );
         assert!(calls[0].args.contains(&"src/index.tsx".to_string()));
+        assert!(calls[0].args.contains(&"vf-main".to_string()));
+        assert!(!calls[0].args.iter().any(|a| a.starts_with("--props")));
         assert_eq!(calls[0].cwd.as_deref(), Some(dir.as_path()));
         drop(calls);
         let props = std::fs::read_to_string(dir.join("video.spec.json"))?;
@@ -120,7 +153,12 @@ mod tests {
     #[tokio::test]
     async fn nonzero_exit_is_error() {
         let dir = std::env::temp_dir().join(format!("vf-remf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        let pkg = "{\"name\":\"vf-project\"}";
+        std::fs::write(dir.join("package.json"), pkg).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        std::fs::write(dir.join(".vf-install-hash"), install_hash(pkg).to_string()).unwrap();
         let engine = RemotionEngine::new(Box::new(MockExecutor::with_outputs(vec![RunOutput {
             status: 1,
             stdout: String::new(),
@@ -132,5 +170,49 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("remotion render failed"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn npm_install_runs_then_render_when_no_node_modules() -> anyhow::Result<()> {
+        let dir = std::env::temp_dir().join(format!("vf-remi-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        std::fs::write(dir.join("package.json"), "{\"name\":\"vf-project\"}")?;
+        let mock = Arc::new(MockExecutor::with_outputs(vec![
+            RunOutput { status: 0, stdout: String::new(), stderr: String::new() },
+            RunOutput { status: 0, stdout: String::new(), stderr: String::new() },
+        ]));
+        let engine = RemotionEngine::new(Box::new(Recorder { inner: mock.clone() }));
+        engine.render(&spec(), &dir, &dir.join("draft.mp4")).await?;
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls[0].program, "npm");
+        assert!(calls[0].args.contains(&"install".to_string()));
+        assert_eq!(calls[1].program, "npx");
+        assert!(dir.join(".vf-install-hash").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn npm_install_skipped_when_hash_matches() -> anyhow::Result<()> {
+        let dir = std::env::temp_dir().join(format!("vf-remh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir)?;
+        let pkg = "{\"name\":\"vf-project\"}";
+        std::fs::write(dir.join("package.json"), pkg)?;
+        std::fs::create_dir_all(dir.join("node_modules"))?;
+        std::fs::write(dir.join(".vf-install-hash"), install_hash(pkg).to_string())?;
+        let mock = Arc::new(MockExecutor::with_outputs(vec![RunOutput {
+            status: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+        }]));
+        let engine = RemotionEngine::new(Box::new(Recorder { inner: mock.clone() }));
+        engine.render(&spec(), &dir, &dir.join("draft.mp4")).await?;
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1); // render only
+        assert_eq!(calls[0].program, "npx");
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(())
     }
 }
