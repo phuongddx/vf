@@ -466,6 +466,38 @@ pub async fn codegen_custom_scenes(
     CodegenOutcome::Done { usage: usage_total, written, fallbacks }
 }
 
+pub fn extract_html(text: &str) -> Option<String> {
+    let t = text.trim();
+    let t = t
+        .strip_prefix("```html")
+        .or_else(|| t.strip_prefix("```"))
+        .unwrap_or(t);
+    let t = t.strip_suffix("```").unwrap_or(t);
+    let t = t.trim();
+    if t.contains("<html") {
+        Some(t.to_string())
+    } else {
+        None
+    }
+}
+
+fn compose_request(idea: &str, seconds: u32, feedback: Option<&str>) -> crate::llm::ChatRequest {
+    let system = "You write HyperFrames compositions. Return ONLY one complete HTML document \
+inside a ```html fence. Contract: the root tag is <html data-fps=\"30\">; body is exactly \
+1080x1920 px with overflow hidden (9:16 vertical); every timed element carries data-start \
+(seconds from film start), data-duration (seconds), and data-track-index (0 unless layered); \
+animate with CSS keyframes only (if you use GSAP you MUST include its <script> tag or lint \
+fails); total film length = last data-start + data-duration; no external network assets — \
+only relative assets/ paths. Plain, readable, high-contrast typography.";
+    let mut user = format!(
+        "Idea: {idea}\nTotal duration: about {seconds} seconds.\nWrite the composition now."
+    );
+    if let Some(fb) = feedback {
+        user.push_str(&format!("\nYour previous composition failed validation: {fb}. Fix it."));
+    }
+    crate::llm::ChatRequest { system: Some(system.into()), user }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -552,5 +584,23 @@ mod tests {
         assert!(req.user.contains("s1"));
         let retry = super::codegen_request(&spec.scenes[0], &spec.style, Some("TS2345"));
         assert!(retry.user.contains("TS2345"));
+    }
+
+    #[test]
+    fn extract_html_strips_fences() {
+        let doc = "```html\n<!doctype html>\n<html data-fps=\"30\"></html>\n```";
+        assert!(super::extract_html(doc).unwrap().contains("<html"));
+        assert!(super::extract_html("<html></html>").is_some());
+        assert!(super::extract_html("just text <div/>").is_none());
+    }
+
+    #[test]
+    fn compose_request_contract() {
+        let req = super::compose_request("demo idea", 8, None);
+        assert!(req.system.as_deref().unwrap_or("").contains("data-start"));
+        assert!(req.user.contains("demo idea"));
+        assert!(req.user.contains("8"));
+        let retry = super::compose_request("demo idea", 8, Some("missing data-duration"));
+        assert!(retry.user.contains("missing data-duration"));
     }
 }
