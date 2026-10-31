@@ -5,6 +5,7 @@ mod engine;
 mod exec;
 mod ir;
 mod llm;
+mod skills;
 mod state;
 
 use clap::Parser;
