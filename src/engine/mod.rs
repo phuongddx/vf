@@ -14,6 +14,7 @@ pub trait Engine: Send + Sync {
 }
 
 pub mod remotion;
+pub mod scaffold;
 
 #[cfg(test)]
 mod tests {
