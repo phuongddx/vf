@@ -11,6 +11,9 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        flags: ["--locked", "--no-default-features --locked"]
     steps:
       - uses: actions/checkout@v4
 
@@ -26,14 +29,14 @@ jobs:
         continue-on-error: true
 
       - name: Clippy
-        run: cargo clippy --all-targets --locked -- -A dead_code
+        run: cargo clippy --all-targets ${{ matrix.flags }} -- -A dead_code
 
       - name: Tests
-        run: cargo test --all --locked
+        run: cargo test --all ${{ matrix.flags }}
 
-      # Static build check — also proves the TLS feature can link once it lands
+      # Static build check — also proves the TLS feature can link (default leg)
       - name: Static musl build
         run: |
           sudo apt-get update && sudo apt-get install -y musl-tools
           rustup target add x86_64-unknown-linux-musl
-          cargo build --release --locked --target x86_64-unknown-linux-musl
+          cargo build --release ${{ matrix.flags }} --target x86_64-unknown-linux-musl
