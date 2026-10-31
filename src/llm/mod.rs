@@ -16,6 +16,9 @@ pub trait LlmClient: Send + Sync {
     async fn complete(&self, req: &ChatRequest) -> anyhow::Result<ChatResponse>;
 }
 
+pub mod anthropic;
+pub mod openai;
+
 #[cfg(test)]
 mod tests {
     use super::*;
