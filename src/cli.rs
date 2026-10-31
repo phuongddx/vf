@@ -12,7 +12,12 @@ pub enum Command {
     /// Show configuration
     Config,
     /// Run the video pipeline for an idea
-    Make { idea: String },
+    Make {
+        idea: String,
+        /// Spec template: default | launch | explainer
+        #[arg(long)]
+        template: Option<String>,
+    },
     /// Install a skill from a git URL, or list installed skills
     Skills { url: Option<String> },
 }

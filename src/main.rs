@@ -8,6 +8,7 @@ mod llm;
 mod skills;
 mod state;
 mod styles;
+mod templates;
 
 use clap::Parser;
 
@@ -16,7 +17,9 @@ async fn main() {
     let cli = cli::Cli::parse();
     let result = match cli.command {
         cli::Command::Config => cmd::config_cmd::run().await,
-        cli::Command::Make { idea } => cmd::make::run(&idea).await,
+        cli::Command::Make { idea, template } => {
+            cmd::make::run(&idea, template.as_deref()).await
+        }
         cli::Command::Skills { url } => cmd::skills_cmd::run(url).await,
     };
     if let Err(e) = result {
