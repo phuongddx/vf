@@ -2,6 +2,7 @@ use crate::exec::Executor;
 use crate::state::State;
 
 pub async fn run(idea: &str, template: Option<&str>) -> anyhow::Result<()> {
+    let lang = crate::i18n::Lang::from_env();
     let slug = slugify(idea);
     let project_dir = std::path::Path::new("vf-projects").join(&slug);
     std::fs::create_dir_all(&project_dir)?;
@@ -30,12 +31,12 @@ pub async fn run(idea: &str, template: Option<&str>) -> anyhow::Result<()> {
         if stage == "post" {
             run_post(&project_dir).await?;
         }
-        println!("stage: {stage} ok");
+        println!("{}", crate::i18n::stage_ok(lang, stage));
         state.mark_done(stage, None);
         state.save(&state_path)?;
     }
 
-    println!("project: {}", project_dir.display());
+    println!("{}", crate::i18n::project_line(lang, &project_dir));
     Ok(())
 }
 

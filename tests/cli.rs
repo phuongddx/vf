@@ -180,3 +180,23 @@ fn doctor_reports_tools() {
         .stdout(predicates::str::contains("doctor: git OK"))
         .stdout(predicates::str::contains("doctor: ffmpeg MISSING"));
 }
+
+#[test]
+fn make_vietnamese_output() {
+    let tmp = std::env::temp_dir().join(format!("vf-vi-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .env("VF_ENGINE", "dry-run")
+        .env("VF_LANG", "vi")
+        .current_dir(&tmp)
+        .arg("make")
+        .arg("vi demo")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("giai đoạn"));
+
+    let _ = fs::remove_dir_all(&tmp);
+}

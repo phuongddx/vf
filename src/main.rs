@@ -3,6 +3,7 @@ mod cmd;
 mod config;
 mod engine;
 mod exec;
+mod i18n;
 mod ir;
 mod llm;
 mod runtime;
