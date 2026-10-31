@@ -1,7 +1,27 @@
 use crate::exec::Executor;
 use crate::state::State;
 
-pub async fn run(idea: &str, template: Option<&str>) -> anyhow::Result<()> {
+pub async fn run(
+    idea: &str,
+    template: Option<&str>,
+    plan: bool,
+    max_cost: Option<f64>,
+) -> anyhow::Result<()> {
+    let t = crate::templates::Template::from_str(template.unwrap_or("default"))?;
+    let calls = estimate_calls(&t);
+    let est = calls as f64 * 0.002;
+    if let Some(max) = max_cost {
+        if est > max {
+            anyhow::bail!("estimated cost ${est:.3} exceeds --max-cost ${max:.3}");
+        }
+    }
+    if plan {
+        for s in crate::state::STAGES {
+            println!("plan: {s}");
+        }
+        println!("estimate: {calls} LLM calls (~${est:.3})");
+        return Ok(());
+    }
     let lang = crate::i18n::Lang::from_env();
     let slug = slugify(idea);
     let project_dir = std::path::Path::new("vf-projects").join(&slug);
@@ -47,6 +67,16 @@ pub fn slugify(idea: &str) -> String {
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
         .collect();
     slug.trim_matches('-').to_string()
+}
+
+/// Rough LLM call estimate: 1 spec call + calls per template body.
+/// Placeholder pricing: $0.002 per call (guardrail math only).
+pub fn estimate_calls(t: &crate::templates::Template) -> u64 {
+    use crate::templates::Template;
+    match t {
+        Template::Default => 2,
+        Template::Launch | Template::Explainer => 4,
+    }
 }
 
 async fn run_render(
@@ -128,5 +158,13 @@ mod tests {
         assert_eq!(cmd.args[4], "copy");
         assert_eq!(cmd.args[5], "/f.mp4");
         assert_eq!(cmd.cwd.as_deref(), Some(Path::new("/p")));
+    }
+
+    #[test]
+    fn estimate_calls_by_template() {
+        use crate::templates::Template;
+        assert_eq!(super::estimate_calls(&Template::Default), 2);
+        assert_eq!(super::estimate_calls(&Template::Launch), 4);
+        assert_eq!(super::estimate_calls(&Template::Explainer), 4);
     }
 }

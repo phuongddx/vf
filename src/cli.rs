@@ -17,6 +17,12 @@ pub enum Command {
         /// Spec template: default | launch | explainer
         #[arg(long)]
         template: Option<String>,
+        /// Print the plan + cost estimate without running
+        #[arg(long)]
+        plan: bool,
+        /// Bail if estimated LLM cost exceeds this (USD)
+        #[arg(long)]
+        max_cost: Option<f64>,
     },
     /// Install a skill from a git URL, or list installed skills
     Skills { url: Option<String> },

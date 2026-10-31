@@ -200,3 +200,45 @@ fn make_vietnamese_output() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn make_plan_mode_prints_estimate_without_running() {
+    let tmp = std::env::temp_dir().join(format!("vf-planm-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .env("VF_ENGINE", "dry-run")
+        .current_dir(&tmp)
+        .arg("make")
+        .arg("plan demo")
+        .arg("--plan")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("estimate:"))
+        .stdout(predicates::str::contains("plan: render"));
+    assert!(!tmp.join("vf-projects").exists());
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn make_max_cost_zero_bails() {
+    let tmp = std::env::temp_dir().join(format!("vf-maxc-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+
+    Command::cargo_bin("vf")
+        .unwrap()
+        .current_dir(&tmp)
+        .arg("make")
+        .arg("x")
+        .arg("--max-cost")
+        .arg("0")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("exceeds --max-cost"));
+
+    let _ = fs::remove_dir_all(&tmp);
+}
