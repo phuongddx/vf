@@ -2,6 +2,10 @@ name: Demo video
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "docs/.demo-trigger"
 
 permissions:
   contents: write
