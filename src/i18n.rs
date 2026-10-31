@@ -35,6 +35,55 @@ pub fn config_hint(lang: Lang, key_env: &str) -> String {
     }
 }
 
+pub fn llm_error(lang: Lang, err: &anyhow::Error, key_env: &str) -> String {
+    use crate::llm::LlmError;
+    match err.downcast_ref::<LlmError>() {
+        Some(LlmError::Http(401)) | Some(LlmError::Http(403)) => match lang {
+            Lang::En => format!("LLM error: invalid API key — check {key_env}"),
+            Lang::Vi => format!("Lỗi LLM: API key không hợp lệ — kiểm tra {key_env}"),
+        },
+        Some(LlmError::Http(429)) => match lang {
+            Lang::En => "LLM error: rate limited (already retried)".into(),
+            Lang::Vi => "Lỗi LLM: vượt giới hạn tốc độ (đã thử lại)".into(),
+        },
+        Some(LlmError::Http(c)) if (500..600).contains(c) => match lang {
+            Lang::En => format!("LLM error: upstream server error (HTTP {c})"),
+            Lang::Vi => format!("Lỗi LLM: máy chủ nhà cung cấp lỗi (HTTP {c})"),
+        },
+        Some(LlmError::Network) => match lang {
+            Lang::En => "LLM error: cannot reach provider (network)".into(),
+            Lang::Vi => "Lỗi LLM: không kết nối được nhà cung cấp (mạng)".into(),
+        },
+        _ => match lang {
+            Lang::En => format!("LLM error: {err}"),
+            Lang::Vi => format!("Lỗi LLM: {err}"),
+        },
+    }
+}
+
+pub fn offline_mode(lang: Lang) -> String {
+    match lang {
+        Lang::En => "offline mode: no LLM key — using template spec".into(),
+        Lang::Vi => "chế độ offline: chưa có key LLM — dùng spec mẫu".into(),
+    }
+}
+
+pub fn llm_fallback(lang: Lang, reason: &str) -> String {
+    match lang {
+        Lang::En => format!("LLM output unusable ({reason}) — fell back to template spec"),
+        Lang::Vi => format!("Kết quả LLM không dùng được ({reason}) — đã dùng spec mẫu"),
+    }
+}
+
+pub fn usage_line(lang: Lang, input: u64, output: u64, cost: Option<f64>) -> String {
+    match (lang, cost) {
+        (Lang::En, Some(c)) => format!("usage: {input} in / {output} out tokens (~${c:.4})"),
+        (Lang::En, None) => format!("usage: {input} in / {output} out tokens"),
+        (Lang::Vi, Some(c)) => format!("tiêu thụ: {input} vào / {output} ra token (~${c:.4})"),
+        (Lang::Vi, None) => format!("tiêu thụ: {input} vào / {output} ra token"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,5 +107,31 @@ mod tests {
         assert!(config_hint(Lang::En, "ZAI_CODING_API_KEY").contains("export ZAI_CODING_API_KEY"));
         assert!(config_hint(Lang::Vi, "ZAI_CODING_API_KEY").contains("export ZAI_CODING_API_KEY"));
         assert!(config_hint(Lang::Vi, "X").contains("gợi ý"));
+    }
+
+    #[test]
+    fn llm_error_maps_bilingually() {
+        use crate::llm::LlmError;
+        let key = anyhow::Error::new(LlmError::Http(401));
+        assert!(llm_error(Lang::En, &key, "ZAI_CODING_API_KEY").contains("invalid API key"));
+        assert!(llm_error(Lang::En, &key, "ZAI_CODING_API_KEY").contains("ZAI_CODING_API_KEY"));
+        assert!(llm_error(Lang::Vi, &key, "ZAI_CODING_API_KEY").contains("không hợp lệ"));
+        let rl = anyhow::Error::new(LlmError::Http(429));
+        assert!(llm_error(Lang::Vi, &rl, "K").contains("giới hạn"));
+        let bad = anyhow::Error::new(LlmError::Http(503));
+        assert!(llm_error(Lang::En, &bad, "K").contains("upstream"));
+        let net = anyhow::Error::new(LlmError::Network);
+        assert!(llm_error(Lang::Vi, &net, "K").contains("không kết nối được"));
+    }
+
+    #[test]
+    fn mode_and_usage_lines_bilingual() {
+        assert!(offline_mode(Lang::Vi).contains("chế độ offline"));
+        assert!(offline_mode(Lang::En).contains("offline mode"));
+        assert!(llm_fallback(Lang::Vi, "bad json").contains("spec mẫu"));
+        assert!(usage_line(Lang::En, 10, 20, Some(0.0001)).contains("usage: 10 in / 20 out tokens"));
+        assert!(usage_line(Lang::En, 10, 20, Some(0.0001)).contains("~$"));
+        assert!(usage_line(Lang::Vi, 10, 20, None).contains("tiêu thụ: 10 vào / 20 ra token"));
+        assert!(!usage_line(Lang::Vi, 10, 20, None).contains("~$"));
     }
 }
