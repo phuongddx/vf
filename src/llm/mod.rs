@@ -42,6 +42,7 @@ impl std::error::Error for LlmError {}
 
 pub mod anthropic;
 pub mod openai;
+pub mod pricing;
 pub mod registry;
 pub mod retry;
 
